@@ -1,0 +1,207 @@
+//! Windows terminal implementation using Console API.
+//! Provides terminal control for Windows systems.
+
+const std = @import("std");
+const windows = std.os.windows;
+const ansi = @import("../ansi.zig");
+
+pub const TerminalError = error{
+    NotATty,
+    GetAttrFailed,
+    SetAttrFailed,
+    GetConsoleFailed,
+    SetConsoleFailed,
+    InvalidHandle,
+};
+
+/// Terminal size
+pub const Size = struct {
+    rows: u16,
+    cols: u16,
+};
+
+/// Console mode flags
+const ENABLE_VIRTUAL_TERMINAL_PROCESSING: windows.DWORD = 0x0004;
+const ENABLE_VIRTUAL_TERMINAL_INPUT: windows.DWORD = 0x0200;
+const ENABLE_PROCESSED_INPUT: windows.DWORD = 0x0001;
+const ENABLE_LINE_INPUT: windows.DWORD = 0x0002;
+const ENABLE_ECHO_INPUT: windows.DWORD = 0x0004;
+const ENABLE_MOUSE_INPUT: windows.DWORD = 0x0010;
+const ENABLE_WINDOW_INPUT: windows.DWORD = 0x0008;
+const ENABLE_EXTENDED_FLAGS: windows.DWORD = 0x0080;
+const ENABLE_QUICK_EDIT_MODE: windows.DWORD = 0x0040;
+
+/// Terminal state for Windows
+pub const State = struct {
+    original_input_mode: windows.DWORD = 0,
+    original_output_mode: windows.DWORD = 0,
+    in_raw_mode: bool = false,
+    in_alt_screen: bool = false,
+    mouse_enabled: bool = false,
+    stdin_handle: windows.HANDLE,
+    stdout_handle: windows.HANDLE,
+
+    pub fn init() State {
+        return .{
+            .stdin_handle = windows.GetStdHandle(windows.STD_INPUT_HANDLE) catch windows.INVALID_HANDLE_VALUE,
+            .stdout_handle = windows.GetStdHandle(windows.STD_OUTPUT_HANDLE) catch windows.INVALID_HANDLE_VALUE,
+        };
+    }
+};
+
+/// External Windows API declarations
+extern "kernel32" fn GetConsoleMode(hConsole: windows.HANDLE, lpMode: *windows.DWORD) callconv(windows.WINAPI) windows.BOOL;
+extern "kernel32" fn SetConsoleMode(hConsole: windows.HANDLE, dwMode: windows.DWORD) callconv(windows.WINAPI) windows.BOOL;
+extern "kernel32" fn GetConsoleScreenBufferInfo(hConsole: windows.HANDLE, lpInfo: *CONSOLE_SCREEN_BUFFER_INFO) callconv(windows.WINAPI) windows.BOOL;
+
+const CONSOLE_SCREEN_BUFFER_INFO = extern struct {
+    dwSize: COORD,
+    dwCursorPosition: COORD,
+    wAttributes: windows.WORD,
+    srWindow: SMALL_RECT,
+    dwMaximumWindowSize: COORD,
+};
+
+const COORD = extern struct {
+    X: windows.SHORT,
+    Y: windows.SHORT,
+};
+
+const SMALL_RECT = extern struct {
+    Left: windows.SHORT,
+    Top: windows.SHORT,
+    Right: windows.SHORT,
+    Bottom: windows.SHORT,
+};
+
+/// Check if a handle is valid
+pub fn isTty(handle: windows.HANDLE) bool {
+    if (handle == windows.INVALID_HANDLE_VALUE) return false;
+    var mode: windows.DWORD = 0;
+    return GetConsoleMode(handle, &mode) != 0;
+}
+
+/// Get terminal size
+pub fn getSize(handle: windows.HANDLE) !Size {
+    var info: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+    if (GetConsoleScreenBufferInfo(handle, &info) == 0) {
+        return TerminalError.GetConsoleFailed;
+    }
+    return .{
+        .rows = @intCast(info.srWindow.Bottom - info.srWindow.Top + 1),
+        .cols = @intCast(info.srWindow.Right - info.srWindow.Left + 1),
+    };
+}
+
+/// Enable raw mode
+pub fn enableRawMode(state: *State) !void {
+    if (state.in_raw_mode) return;
+
+    if (state.stdin_handle == windows.INVALID_HANDLE_VALUE or
+        state.stdout_handle == windows.INVALID_HANDLE_VALUE)
+    {
+        return TerminalError.InvalidHandle;
+    }
+
+    // Save original modes
+    if (GetConsoleMode(state.stdin_handle, &state.original_input_mode) == 0) {
+        return TerminalError.GetConsoleFailed;
+    }
+    if (GetConsoleMode(state.stdout_handle, &state.original_output_mode) == 0) {
+        return TerminalError.GetConsoleFailed;
+    }
+
+    // Set input mode for raw input with VT processing
+    const input_mode: windows.DWORD = ENABLE_VIRTUAL_TERMINAL_INPUT | ENABLE_WINDOW_INPUT;
+    if (SetConsoleMode(state.stdin_handle, input_mode) == 0) {
+        return TerminalError.SetConsoleFailed;
+    }
+
+    // Enable VT processing on output
+    const output_mode: windows.DWORD = state.original_output_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    if (SetConsoleMode(state.stdout_handle, output_mode) == 0) {
+        // Restore input mode and fail
+        _ = SetConsoleMode(state.stdin_handle, state.original_input_mode);
+        return TerminalError.SetConsoleFailed;
+    }
+
+    state.in_raw_mode = true;
+}
+
+/// Disable raw mode
+pub fn disableRawMode(state: *State) void {
+    if (!state.in_raw_mode) return;
+
+    _ = SetConsoleMode(state.stdin_handle, state.original_input_mode);
+    _ = SetConsoleMode(state.stdout_handle, state.original_output_mode);
+
+    state.in_raw_mode = false;
+}
+
+/// Enter alternate screen buffer
+pub fn enterAltScreen(state: *State, writer: anytype) !void {
+    if (state.in_alt_screen) return;
+
+    try writer.writeAll(ansi.alt_screen_enter);
+    state.in_alt_screen = true;
+}
+
+/// Exit alternate screen buffer
+pub fn exitAltScreen(state: *State, writer: anytype) !void {
+    if (!state.in_alt_screen) return;
+
+    try writer.writeAll(ansi.alt_screen_exit);
+    state.in_alt_screen = false;
+}
+
+/// Enable mouse tracking
+pub fn enableMouse(state: *State, writer: anytype) !void {
+    if (state.mouse_enabled) return;
+
+    // Enable mouse input in console mode
+    if (state.stdin_handle != windows.INVALID_HANDLE_VALUE) {
+        var mode: windows.DWORD = 0;
+        if (GetConsoleMode(state.stdin_handle, &mode) != 0) {
+            _ = SetConsoleMode(state.stdin_handle, mode | ENABLE_MOUSE_INPUT);
+        }
+    }
+
+    // Also send ANSI sequences for VT mode
+    try writer.writeAll("\x1b[?1003h\x1b[?1006h");
+    state.mouse_enabled = true;
+}
+
+/// Disable mouse tracking
+pub fn disableMouse(state: *State, writer: anytype) !void {
+    if (!state.mouse_enabled) return;
+
+    try writer.writeAll("\x1b[?1006l\x1b[?1003l");
+    state.mouse_enabled = false;
+}
+
+/// Read available input (Windows uses std.io)
+pub fn readInput(state: *State, buffer: []u8, timeout_ms: i32) !usize {
+    _ = state;
+    _ = timeout_ms;
+    // On Windows, we use the standard reader which handles VT input
+    const stdin = std.io.getStdIn();
+    return stdin.read(buffer) catch 0;
+}
+
+/// Flush output
+pub fn flush(handle: windows.HANDLE) void {
+    _ = handle;
+    // Windows typically auto-flushes
+}
+
+/// Setup signal handlers (Windows uses console events differently)
+pub fn setupSignals() !void {
+    // Windows handles resize through WINDOW_BUFFER_SIZE_EVENT
+    // This is handled in the input loop
+}
+
+/// Check if resize was signaled
+pub fn checkResize() bool {
+    // On Windows, resize is handled through console events
+    return false;
+}
