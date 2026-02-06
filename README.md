@@ -2,6 +2,8 @@
 
 A delightful TUI framework for Zig, inspired by [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lipgloss](https://github.com/charmbracelet/lipgloss).
 
+<video src="assets/showcase.mp4" controls></video>
+
 ## Features
 
 - **Elm Architecture** - Model-Update-View pattern for predictable state management
