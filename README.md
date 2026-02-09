@@ -434,6 +434,21 @@ var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
 });
 ```
 
+### Custom Event Loop
+
+For applications that need to do other work between frames (network polling, background processing, etc.), use `start()` + `tick()` instead of `run()`:
+
+```zig
+var program = try zz.Program(Model).init(gpa.allocator());
+defer program.deinit();
+
+try program.start();
+while (program.isRunning()) {
+    try program.tick();
+    // poll sockets, process jobs, etc.
+}
+```
+
 ### Debug Logging
 
 Since stdout is owned by the renderer, use file-based logging:
