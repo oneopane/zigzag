@@ -29,10 +29,12 @@ Add ZigZag to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .zigzag = .{
-        .url = "https://github.com/meszmate/zigzag/archive/refs/tags/v0.1.0.tar.gz",
+        .url = "https://github.com/meszmate/zigzag/archive/refs/heads/main.tar.gz",
         .hash = "...",
     },
 },
+// To pin a specific version instead:
+// .url = "https://github.com/meszmate/zigzag/archive/refs/tags/v0.1.0.tar.gz",
 ```
 
 Then in your `build.zig`:
