@@ -130,7 +130,7 @@ return .{ .println = "Log message" };  // Print above the program output
 The styling system is inspired by Lipgloss:
 
 ```zig
-const style = zz.Style{}
+const style = (zz.Style{})
     .bold(true)
     .italic(true)
     .fg(zz.Color.cyan())
@@ -149,11 +149,11 @@ const style = zz.Style{}
 const output = try style.render(allocator, "Hello, World!");
 
 // Text transforms
-const upper_style = zz.Style{}.transform(zz.transforms.uppercase);
+const upper_style = (zz.Style{}).transform(zz.transforms.uppercase);
 const shouting = try upper_style.render(allocator, "hello"); // "HELLO"
 
 // Whitespace formatting controls
-const ws_style = zz.Style{}
+const ws_style = (zz.Style{})
     .underline(true)
     .setUnderlineSpaces(true)      // Underline extends through spaces
     .setColorWhitespace(false);     // Don't apply bg color to whitespace
@@ -162,11 +162,11 @@ const ws_style = zz.Style{}
 const derived = style.unsetBold().unsetPadding().unsetBorder();
 
 // Style inheritance (unset values inherit from parent)
-const child = zz.Style{}.fg(zz.Color.red()).inherit(style);
+const child = (zz.Style{}).fg(zz.Color.red()).inherit(style);
 
 // Style ranges - apply different styles to byte ranges
 const ranges = &[_]zz.StyleRange{
-    .{ .start = 0, .end = 5, .s = zz.Style{}.bold(true) },
+    .{ .start = 0, .end = 5, .s = (zz.Style{}).bold(true) },
 };
 const ranged = try zz.renderWithRanges(allocator, "Hello World", ranges);
 
