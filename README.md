@@ -78,7 +78,7 @@ const Model = struct {
     }
 
     pub fn view(self: *const Model, ctx: *const zz.Context) []const u8 {
-        const style = zz.Style{}.bold(true).fg(zz.Color.cyan());
+        const style = (zz.Style{}).bold(true).fg(zz.Color.cyan());
         const text = std.fmt.allocPrint(ctx.allocator, "Count: {d}\n\nPress q to quit", .{self.count}) catch "Error";
         return style.render(ctx.allocator, text) catch text;
     }
