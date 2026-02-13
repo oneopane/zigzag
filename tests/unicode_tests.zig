@@ -16,6 +16,8 @@ test "charWidth: CJK ideographs are wide" {
 }
 
 test "charWidth: emoji are wide" {
+    zz.unicode.setWidthStrategy(.unicode);
+    defer zz.unicode.setWidthStrategy(.legacy_wcwidth);
     try testing.expectEqual(@as(usize, 2), zz.unicode.charWidth(0x1F600)); // grinning face
     try testing.expectEqual(@as(usize, 2), zz.unicode.charWidth(0x1F680)); // rocket
     try testing.expectEqual(@as(usize, 2), zz.unicode.charWidth(0x2615));  // hot beverage

@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 pub const ansi = @import("ansi.zig");
 pub const screen = @import("screen.zig");
+const unicode = @import("../unicode.zig");
 
 // Platform-specific implementation
 const platform = if (builtin.os.tag == .windows)
@@ -14,6 +15,12 @@ else
 
 pub const Size = platform.Size;
 pub const TerminalError = platform.TerminalError;
+
+pub const UnicodeWidthCapabilities = struct {
+    mode_2027: bool = false,
+    kitty_text_sizing: bool = false,
+    strategy: unicode.WidthStrategy = .legacy_wcwidth,
+};
 
 /// Terminal configuration options
 pub const Config = struct {
@@ -41,6 +48,7 @@ pub const Terminal = struct {
     stdin: std.fs.File,
     write_buffer: [4096]u8 = undefined,
     write_pos: usize = 0,
+    unicode_width_caps: UnicodeWidthCapabilities = .{},
 
     pub fn init(config: Config) !Terminal {
         const stdout = config.output orelse std.fs.File.stdout();
@@ -105,6 +113,8 @@ pub const Terminal = struct {
             try self.writeBytes(ansi.kitty_keyboard_enable);
         }
 
+        self.detectUnicodeWidthCapabilities();
+
         // Clear screen
         try self.writeBytes(ansi.screen_clear);
         try self.writeBytes(ansi.cursor_home);
@@ -116,6 +126,11 @@ pub const Terminal = struct {
         // Disable Kitty keyboard protocol
         if (self.config.kitty_keyboard) {
             self.writeBytes(ansi.kitty_keyboard_disable) catch {};
+        }
+
+        if (self.unicode_width_caps.mode_2027) {
+            self.writeBytes(ansi.unicode_width_mode_disable) catch {};
+            self.unicode_width_caps.mode_2027 = false;
         }
 
         // Disable bracketed paste
@@ -252,6 +267,210 @@ pub const Terminal = struct {
             platform.State.init().stdin_handle
         else
             std.posix.STDIN_FILENO);
+    }
+
+    pub fn getUnicodeWidthCapabilities(self: *const Terminal) UnicodeWidthCapabilities {
+        return self.unicode_width_caps;
+    }
+
+    fn detectUnicodeWidthCapabilities(self: *Terminal) void {
+        self.unicode_width_caps = .{
+            .kitty_text_sizing = self.queryKittyTextSizingSupport() catch false,
+        };
+
+        if (!self.isTty()) {
+            return;
+        }
+
+        if (builtin.os.tag != .windows) {
+            self.unicode_width_caps.mode_2027 = self.queryMode2027Support() catch false;
+            if (self.unicode_width_caps.mode_2027) {
+                self.writeBytes(ansi.unicode_width_mode_enable) catch {};
+            }
+        }
+
+        self.unicode_width_caps.strategy = self.selectWidthStrategy();
+    }
+
+    fn queryMode2027Support(self: *Terminal) !bool {
+        try self.writeBytes(ansi.unicode_width_mode_query);
+        try self.flush();
+
+        var collected: [512]u8 = undefined;
+        var collected_len: usize = 0;
+        const deadline_ms = std.time.milliTimestamp() + 250;
+
+        while (std.time.milliTimestamp() < deadline_ms) {
+            var chunk: [128]u8 = undefined;
+            const n = self.readInput(&chunk, 40) catch 0;
+            if (n == 0) continue;
+
+            const copy_len = @min(n, collected.len - collected_len);
+            if (copy_len > 0) {
+                @memcpy(collected[collected_len .. collected_len + copy_len], chunk[0..copy_len]);
+                collected_len += copy_len;
+            }
+
+            if (parseMode2027Response(collected[0..collected_len])) |supported| {
+                return supported;
+            }
+        }
+
+        return false;
+    }
+
+    fn parseMode2027Response(bytes: []const u8) ?bool {
+        const prefix = "\x1b[?2027;";
+        var search_from: usize = 0;
+
+        while (search_from < bytes.len) {
+            const start = std.mem.indexOfPos(u8, bytes, search_from, prefix) orelse return null;
+            var i = start + prefix.len;
+            var param: usize = 0;
+            var saw_digit = false;
+
+            while (i < bytes.len and bytes[i] >= '0' and bytes[i] <= '9') : (i += 1) {
+                saw_digit = true;
+                param = param * 10 + (bytes[i] - '0');
+            }
+
+            if (!saw_digit) {
+                search_from = start + 1;
+                continue;
+            }
+
+            if (i + 1 < bytes.len and bytes[i] == '$' and bytes[i + 1] == 'y') {
+                return param != 0;
+            }
+
+            search_from = start + 1;
+        }
+
+        return null;
+    }
+
+    fn selectWidthStrategy(self: *const Terminal) unicode.WidthStrategy {
+        if (isInsideMultiplexer()) {
+            return .legacy_wcwidth;
+        }
+
+        if (self.unicode_width_caps.mode_2027) {
+            return .unicode;
+        }
+
+        if (self.unicode_width_caps.kitty_text_sizing) {
+            return .unicode;
+        }
+
+        if (isKnownUnicodeWidthTerminal()) {
+            return .unicode;
+        }
+
+        return .legacy_wcwidth;
+    }
+
+    fn queryKittyTextSizingSupport(self: *Terminal) !bool {
+        if (!looksLikeKittyTerminal()) return false;
+
+        const cpr = "\x1b[6n";
+        // CR, CPR, draw 2-cell space via kitty OSC 66 width-only, CPR.
+        const probe = "\r" ++ cpr ++ "\x1b]66;w=2; \x07" ++ cpr;
+        try self.writeBytes(probe);
+        try self.flush();
+
+        var buf: [512]u8 = undefined;
+        var len: usize = 0;
+        const deadline_ms = std.time.milliTimestamp() + 250;
+
+        while (std.time.milliTimestamp() < deadline_ms) {
+            var chunk: [128]u8 = undefined;
+            const n = self.readInput(&chunk, 40) catch 0;
+            if (n == 0) continue;
+
+            const copy_len = @min(n, buf.len - len);
+            if (copy_len > 0) {
+                @memcpy(buf[len .. len + copy_len], chunk[0..copy_len]);
+                len += copy_len;
+            }
+
+            if (parseTwoCprColumns(buf[0..len])) |cols| {
+                return cols.second == cols.first + 2;
+            }
+        }
+
+        return false;
+    }
+
+    fn parseTwoCprColumns(bytes: []const u8) ?struct { first: usize, second: usize } {
+        var idx: usize = 0;
+        var found: [2]usize = .{ 0, 0 };
+        var count: usize = 0;
+
+        while (idx < bytes.len and count < 2) {
+            const esc = std.mem.indexOfPos(u8, bytes, idx, "\x1b[") orelse break;
+            var i = esc + 2;
+
+            while (i < bytes.len and bytes[i] >= '0' and bytes[i] <= '9') : (i += 1) {}
+            if (i >= bytes.len or bytes[i] != ';') {
+                idx = esc + 1;
+                continue;
+            }
+            i += 1;
+
+            const col_start = i;
+            while (i < bytes.len and bytes[i] >= '0' and bytes[i] <= '9') : (i += 1) {}
+            if (i >= bytes.len or bytes[i] != 'R' or col_start == i) {
+                idx = esc + 1;
+                continue;
+            }
+
+            const col = std.fmt.parseInt(usize, bytes[col_start..i], 10) catch {
+                idx = esc + 1;
+                continue;
+            };
+            found[count] = col;
+            count += 1;
+            idx = i + 1;
+        }
+
+        if (count == 2) {
+            return .{ .first = found[0], .second = found[1] };
+        }
+        return null;
+    }
+
+    fn isInsideMultiplexer() bool {
+        return envVarExists("TMUX") or envVarExists("ZELLIJ") or envVarContains("TERM", "screen");
+    }
+
+    fn isKnownUnicodeWidthTerminal() bool {
+        // Terminals known to use grapheme-aware width by default.
+        return envVarEquals("TERM_PROGRAM", "WezTerm") or
+            envVarEquals("TERM_PROGRAM", "iTerm.app") or
+            envVarContains("TERM", "wezterm") or
+            envVarContains("TERM", "ghostty");
+    }
+
+    fn looksLikeKittyTerminal() bool {
+        return envVarExists("KITTY_WINDOW_ID") or envVarContains("TERM", "kitty");
+    }
+
+    fn envVarExists(name: []const u8) bool {
+        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        defer std.heap.page_allocator.free(value);
+        return value.len > 0;
+    }
+
+    fn envVarEquals(name: []const u8, expected: []const u8) bool {
+        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        defer std.heap.page_allocator.free(value);
+        return std.ascii.eqlIgnoreCase(value, expected);
+    }
+
+    fn envVarContains(name: []const u8, needle: []const u8) bool {
+        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        defer std.heap.page_allocator.free(value);
+        return std.mem.indexOf(u8, value, needle) != null;
     }
 
     /// Simple writer struct for compatibility

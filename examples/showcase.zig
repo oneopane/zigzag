@@ -692,25 +692,25 @@ const Model = struct {
 
         const cjk_box = try cjk_style.render(alloc, cjk_content);
 
-        // -- Emoji Box --
-        var emoji_header_style = zz.Style{};
-        emoji_header_style = emoji_header_style.bold(true);
-        emoji_header_style = emoji_header_style.fg(zz.Color.hex("#4ECDC4"));
-        emoji_header_style = emoji_header_style.inline_style(true);
-        const emoji_header = try emoji_header_style.render(alloc, "Emoji");
+        // -- Symbol Box --
+        var symbol_header_style = zz.Style{};
+        symbol_header_style = symbol_header_style.bold(true);
+        symbol_header_style = symbol_header_style.fg(zz.Color.hex("#4ECDC4"));
+        symbol_header_style = symbol_header_style.inline_style(true);
+        const symbol_header = try symbol_header_style.render(alloc, "Symbols");
 
-        var emoji_style = zz.Style{};
-        emoji_style = emoji_style.borderAll(zz.Border.rounded);
-        emoji_style = emoji_style.borderForeground(zz.Color.hex("#4ECDC4"));
-        emoji_style = emoji_style.paddingLeft(1).paddingRight(1);
-        emoji_style = emoji_style.width(30);
+        var symbol_style = zz.Style{};
+        symbol_style = symbol_style.borderAll(zz.Border.rounded);
+        symbol_style = symbol_style.borderForeground(zz.Color.hex("#4ECDC4"));
+        symbol_style = symbol_style.paddingLeft(1).paddingRight(1);
+        symbol_style = symbol_style.width(30);
 
-        const emoji_content = try std.fmt.allocPrint(alloc, "{s}\n\n  \u{1F680} Rocket     \u{2615} Coffee\n  \u{1F4A9} Fun        \u{2B50} Star\n  \u{1F600} Grinning   \u{2764} Heart", .{emoji_header});
+        const symbol_content = try std.fmt.allocPrint(alloc, "{s}\n\n  \u{03B1}\u{03B2}\u{03B3}\u{03B4}\u{03B5}  Greek letters\n  \u{2211}\u{221A}\u{2260}\u{2264}\u{2265}  Math symbols\n  \u{2605}\u{2606}\u{00A7}\u{00B6}\u{00B0}  Misc symbols", .{symbol_header});
 
-        const emoji_box = try emoji_style.render(alloc, emoji_content);
+        const symbol_box = try symbol_style.render(alloc, symbol_content);
 
         // -- Top row --
-        const top_row = try zz.joinHorizontal(alloc, &.{ cjk_box, "  ", emoji_box });
+        const top_row = try zz.joinHorizontal(alloc, &.{ cjk_box, "  ", symbol_box });
 
         // -- Fullwidth/Halfwidth comparison box --
         var fw_header_style = zz.Style{};
@@ -756,7 +756,7 @@ const Model = struct {
         align_style = align_style.borderForeground(zz.Color.green());
         align_style = align_style.paddingLeft(1).paddingRight(1);
 
-        const align_content = try std.fmt.allocPrint(alloc, "{s}\n\n  |hello     |  5 cols\n  |\u{4F60}\u{597D}      |  4 cols (2 wide chars)\n  |\u{1F680}\u{1F4A9}\u{2615}   |  6 cols (3 emojis)\n  |caf\u{00E9}      |  4 cols (precomposed)\n  |cafe\u{0301}      |  4 cols (combining)", .{align_header});
+        const align_content = try std.fmt.allocPrint(alloc, "{s}\n\n  |hello     |  5 cols\n  |\u{4F60}\u{597D}      |  4 cols (2 wide chars)\n  |\u{03B1}\u{03B2}\u{03B3}\u{03B4}      |  4 cols (Greek)\n  |caf\u{00E9}      |  4 cols (precomposed)\n  |cafe\u{0301}      |  4 cols (combining)", .{align_header});
 
         const align_box = try align_style.render(alloc, align_content);
 
@@ -768,7 +768,7 @@ const Model = struct {
         hint_style = hint_style.fg(zz.Color.gray(10));
         hint_style = hint_style.italic(true);
         hint_style = hint_style.inline_style(true);
-        const hint = try hint_style.render(alloc, "All text above is laid out using Unicode-aware display width.");
+        const hint = try hint_style.render(alloc, "Unicode width is terminal-dependent; this tab uses width-stable samples.");
 
         return zz.joinVertical(alloc, &.{ top_row, "", mid_row, "", align_box, "", hint });
     }

@@ -426,6 +426,7 @@ var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
     .cursor = false,            // Show cursor
     .bracketed_paste = true,    // Enable bracketed paste mode
     .kitty_keyboard = false,    // Enable Kitty keyboard protocol
+    .unicode_width_strategy = null, // null=auto, .legacy_wcwidth, .unicode
     .suspend_enabled = true,    // Enable Ctrl+Z suspend/resume
     .title = "My App",         // Window title
     .log_file = "debug.log",   // Debug log file path
@@ -433,6 +434,12 @@ var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
     .output = custom_stdout,    // Custom output (for testing/piping)
 });
 ```
+
+Unicode width strategy can also be overridden per-process with `ZZ_UNICODE_WIDTH=auto|legacy|unicode`.
+By default (`null`/`auto`), ZigZag:
+- probes DEC mode `2027` and enables it when available,
+- probes kitty text-sizing support,
+- applies terminal/multiplexer heuristics (e.g. tmux/screen/zellij favor legacy width).
 
 ### Custom Event Loop
 

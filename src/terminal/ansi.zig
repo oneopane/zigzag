@@ -39,6 +39,11 @@ pub const bracketed_paste_disable = CSI ++ "?2004l";
 pub const sync_start = CSI ++ "?2026h";
 pub const sync_end = CSI ++ "?2026l";
 
+// Unicode width mode (DECRQM/DECSET private mode 2027)
+pub const unicode_width_mode_query = CSI ++ "?2027$p";
+pub const unicode_width_mode_enable = CSI ++ "?2027h";
+pub const unicode_width_mode_disable = CSI ++ "?2027l";
+
 // Kitty keyboard protocol
 pub const kitty_keyboard_enable = CSI ++ ">1u";
 pub const kitty_keyboard_disable = CSI ++ "<u";

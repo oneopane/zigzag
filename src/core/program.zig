@@ -11,6 +11,7 @@ const Options = @import("context.zig").Options;
 const message = @import("message.zig");
 const command = @import("command.zig");
 const Logger = @import("log.zig").Logger;
+const unicode = @import("../unicode.zig");
 
 pub const Cmd = command.Cmd;
 pub const Msg = message;
@@ -163,6 +164,13 @@ pub fn Program(comptime Model: type) type {
             self.context.width = size.cols;
             self.context.height = size.rows;
             self.context._terminal = &self.terminal.?;
+
+            const width_caps = self.terminal.?.getUnicodeWidthCapabilities();
+            const effective_width_strategy = self.resolveUnicodeWidthStrategy(width_caps.strategy);
+            self.context.unicode_width_strategy = effective_width_strategy;
+            self.context.terminal_mode_2027 = width_caps.mode_2027;
+            self.context.kitty_text_sizing = width_caps.kitty_text_sizing;
+            unicode.setWidthStrategy(effective_width_strategy);
 
             // Initialize the model
             const init_cmd = self.model.init(&self.context);
@@ -321,6 +329,25 @@ pub fn Program(comptime Model: type) type {
                 return self.dispatchToModel(user_msg);
             }
 
+            return null;
+        }
+
+        fn resolveUnicodeWidthStrategy(self: *const Self, detected: unicode.WidthStrategy) unicode.WidthStrategy {
+            if (self.options.unicode_width_strategy) |forced| {
+                return forced;
+            }
+            if (envUnicodeWidthOverride()) |from_env| {
+                return from_env;
+            }
+            return detected;
+        }
+
+        fn envUnicodeWidthOverride() ?unicode.WidthStrategy {
+            const raw = std.process.getEnvVarOwned(std.heap.page_allocator, "ZZ_UNICODE_WIDTH") catch return null;
+            defer std.heap.page_allocator.free(raw);
+            if (std.ascii.eqlIgnoreCase(raw, "unicode")) return .unicode;
+            if (std.ascii.eqlIgnoreCase(raw, "legacy")) return .legacy_wcwidth;
+            if (std.ascii.eqlIgnoreCase(raw, "auto")) return null;
             return null;
         }
 

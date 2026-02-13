@@ -4,6 +4,7 @@
 const std = @import("std");
 const Terminal = @import("../terminal/terminal.zig").Terminal;
 const color_mod = @import("../style/color.zig");
+const unicode_mod = @import("../unicode.zig");
 const Logger = @import("log.zig").Logger;
 
 /// Runtime context passed to init, update, and view functions
@@ -41,6 +42,15 @@ pub const Context = struct {
     /// Whether the terminal has a dark background
     is_dark_background: bool,
 
+    /// Active Unicode width strategy for text measurement
+    unicode_width_strategy: unicode_mod.WidthStrategy,
+
+    /// Whether DEC mode 2027 was successfully negotiated
+    terminal_mode_2027: bool,
+
+    /// Whether kitty text sizing support was detected
+    kitty_text_sizing: bool,
+
     /// Access to internal state (for advanced use)
     _terminal: ?*Terminal,
 
@@ -68,6 +78,9 @@ pub const Context = struct {
             .color_256 = profile.supports256(),
             .color_profile = profile,
             .is_dark_background = color_mod.hasDarkBackground(),
+            .unicode_width_strategy = unicode_mod.getWidthStrategy(),
+            .terminal_mode_2027 = false,
+            .kitty_text_sizing = false,
             ._terminal = null,
         };
     }
@@ -152,6 +165,9 @@ pub const Options = struct {
 
     /// Enable Kitty keyboard protocol
     kitty_keyboard: bool = false,
+
+    /// Force Unicode width strategy (`null` = auto-detect)
+    unicode_width_strategy: ?unicode_mod.WidthStrategy = null,
 
     /// Enable suspend/resume with Ctrl+Z
     suspend_enabled: bool = true,
