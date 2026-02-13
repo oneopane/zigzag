@@ -8,6 +8,8 @@ const Model = struct {
     list: zz.List(Todo),
     input_mode: bool,
     input: zz.TextInput,
+    persistent_allocator: std.mem.Allocator,
+    owned_titles: std.array_list.Managed([]const u8),
 
     const Todo = struct {
         id: u32,
@@ -22,6 +24,8 @@ const Model = struct {
         self.list = zz.List(Todo).init(ctx.persistent_allocator);
         self.list.multi_select = true;
         self.list.height = 10;
+        self.persistent_allocator = ctx.persistent_allocator;
+        self.owned_titles = std.array_list.Managed([]const u8).init(ctx.persistent_allocator);
 
         // Add some sample items
         const Item = zz.List(Todo).Item;
@@ -53,7 +57,16 @@ const Model = struct {
                                 const new_id: u32 = @intCast(self.list.items.items.len + 1);
                                 const title = ctx.persistent_allocator.dupe(u8, self.input.getValue()) catch return .none;
                                 const Item = zz.List(Todo).Item;
-                                self.list.addItem(Item.init(.{ .id = new_id, .done = false }, title)) catch {};
+                                self.list.addItem(Item.init(.{ .id = new_id, .done = false }, title)) catch {
+                                    ctx.persistent_allocator.free(title);
+                                    return .none;
+                                };
+                                self.owned_titles.append(title) catch {
+                                    _ = self.list.items.pop();
+                                    self.list.updateFilter() catch {};
+                                    ctx.persistent_allocator.free(title);
+                                    return .none;
+                                };
                                 self.input.setValue("") catch {};
                             }
                             self.input_mode = false;
@@ -90,7 +103,8 @@ const Model = struct {
         if (self.list.cursor >= visible.len) return;
 
         const item_idx = visible[self.list.cursor];
-        _ = self.list.items.orderedRemove(item_idx);
+        const removed = self.list.items.orderedRemove(item_idx);
+        self.freeOwnedTitle(removed.title);
 
         // Update filter to rebuild filtered_indices
         self.list.updateFilter() catch {};
@@ -108,6 +122,16 @@ const Model = struct {
 
         const item_idx = visible[self.list.cursor];
         self.list.items.items[item_idx].value.done = !self.list.items.items[item_idx].value.done;
+    }
+
+    fn freeOwnedTitle(self: *Model, title: []const u8) void {
+        for (self.owned_titles.items, 0..) |owned, i| {
+            if (owned.ptr == title.ptr and owned.len == title.len) {
+                _ = self.owned_titles.orderedRemove(i);
+                self.persistent_allocator.free(owned);
+                return;
+            }
+        }
     }
 
     pub fn view(self: *const Model, ctx: *const zz.Context) []const u8 {
@@ -255,6 +279,10 @@ const Model = struct {
     }
 
     pub fn deinit(self: *Model) void {
+        for (self.owned_titles.items) |title| {
+            self.persistent_allocator.free(title);
+        }
+        self.owned_titles.deinit();
         self.list.deinit();
         self.input.deinit();
     }
