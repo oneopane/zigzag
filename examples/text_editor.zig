@@ -92,7 +92,7 @@ const Model = struct {
         const cursor_info = std.fmt.allocPrint(
             ctx.allocator,
             "Ln {d}, Col {d} | {d} lines",
-            .{ self.editor.cursor_row + 1, self.editor.cursor_col + 1, self.editor.lineCount() },
+            .{ self.editor.cursor_row + 1, self.editor.cursorDisplayColumn() + 1, self.editor.lineCount() },
         ) catch "";
 
         var status_style = zz.Style{};

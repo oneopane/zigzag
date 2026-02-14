@@ -266,6 +266,7 @@ pub const TextArea = struct {
             if (self.lines.items.len >= max) return;
         }
 
+        self.clampCursorToLineBoundary();
         const line = self.currentLine();
         const rest = line.items[self.cursor_col..];
 
@@ -319,6 +320,7 @@ pub const TextArea = struct {
 
     fn deleteForward(self: *TextArea) void {
         const line = self.currentLine();
+        self.clampCursorToLineBoundary();
         if (self.cursor_col < line.items.len) {
             // Delete character at cursor
             const byte_len = std.unicode.utf8ByteSequenceLength(line.items[self.cursor_col]) catch 1;
@@ -336,11 +338,13 @@ pub const TextArea = struct {
     }
 
     fn killToEndOfLine(self: *TextArea) void {
+        self.clampCursorToLineBoundary();
         const line = self.currentLine();
         line.shrinkRetainingCapacity(self.cursor_col);
     }
 
     fn killToStartOfLine(self: *TextArea) void {
+        self.clampCursorToLineBoundary();
         const line = self.currentLine();
         std.mem.copyForwards(u8, line.items[0..], line.items[self.cursor_col..]);
         line.shrinkRetainingCapacity(line.items.len - self.cursor_col);
@@ -355,6 +359,7 @@ pub const TextArea = struct {
                 self.cursor_row = self.lines.items.len - 1;
             }
             self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
+            self.clampCursorToLineBoundary();
         } else {
             self.currentLine().clearRetainingCapacity();
             self.cursor_col = 0;
@@ -365,6 +370,7 @@ pub const TextArea = struct {
         if (self.cursor_row > 0) {
             self.cursor_row -= 1;
             self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
+            self.clampCursorToLineBoundary();
         }
     }
 
@@ -372,10 +378,12 @@ pub const TextArea = struct {
         if (self.cursor_row < self.lines.items.len - 1) {
             self.cursor_row += 1;
             self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
+            self.clampCursorToLineBoundary();
         }
     }
 
     fn moveCursorLeft(self: *TextArea) void {
+        self.clampCursorToLineBoundary();
         if (self.cursor_col > 0) {
             self.cursor_col -= 1;
             // Handle UTF-8 continuation bytes
@@ -391,6 +399,7 @@ pub const TextArea = struct {
 
     fn moveCursorRight(self: *TextArea) void {
         const line = self.currentLine();
+        self.clampCursorToLineBoundary();
         if (self.cursor_col < line.items.len) {
             const byte_len = std.unicode.utf8ByteSequenceLength(line.items[self.cursor_col]) catch 1;
             self.cursor_col = @min(self.cursor_col + byte_len, line.items.len);
@@ -407,6 +416,7 @@ pub const TextArea = struct {
             self.cursor_row = 0;
         }
         self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
+        self.clampCursorToLineBoundary();
     }
 
     fn pageDown(self: *TextArea) void {
@@ -416,6 +426,7 @@ pub const TextArea = struct {
             self.cursor_row = self.lines.items.len - 1;
         }
         self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
+        self.clampCursorToLineBoundary();
     }
 
     fn ensureVisible(self: *TextArea) void {
@@ -434,6 +445,11 @@ pub const TextArea = struct {
         } else if (display_col >= self.viewport_col + effective_width) {
             self.viewport_col = display_col - effective_width + 1;
         }
+    }
+
+    /// Cursor column in terminal cells (display width), 0-indexed.
+    pub fn cursorDisplayColumn(self: *const TextArea) usize {
+        return self.cursorDisplayCol();
     }
 
     /// Render the text area
@@ -566,5 +582,18 @@ pub const TextArea = struct {
             byte_idx += byte_len;
         }
         return display_col;
+    }
+
+    fn clampCursorToLineBoundary(self: *TextArea) void {
+        const line = self.currentLine();
+        self.cursor_col = clampToUtf8Boundary(line.items, self.cursor_col);
+    }
+
+    fn clampToUtf8Boundary(line: []const u8, pos: usize) usize {
+        var clamped = @min(pos, line.len);
+        while (clamped > 0 and clamped < line.len and (line[clamped] & 0xC0) == 0x80) {
+            clamped -= 1;
+        }
+        return clamped;
     }
 };

@@ -150,3 +150,31 @@ test "TextArea accepts multi-character paste commits (IME-like)" {
     defer testing.allocator.free(value);
     try testing.expectEqualStrings("中文输入", value);
 }
+
+test "TextArea keeps cursor on UTF-8 boundaries after vertical move" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.setValue("abcd\n中文") catch unreachable;
+    area.handleKey(.{ .key = .end });
+    area.handleKey(.{ .key = .down });
+
+    const value = try area.getValue(testing.allocator);
+    defer testing.allocator.free(value);
+    try testing.expectEqualStrings("abcd\n中文", value);
+
+    area.handleKey(.{ .key = .{ .char = 'X' } });
+    const updated = try area.getValue(testing.allocator);
+    defer testing.allocator.free(updated);
+    try testing.expectEqualStrings("abcd\n中X文", updated);
+}
+
+test "TextArea cursorDisplayColumn uses visual width for CJK" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.handleKey(.{ .key = .{ .paste = "中a" } });
+    area.handleKey(.{ .key = .left });
+
+    try testing.expectEqual(@as(usize, 2), area.cursorDisplayColumn());
+}
