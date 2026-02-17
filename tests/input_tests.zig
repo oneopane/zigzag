@@ -4,6 +4,31 @@ const std = @import("std");
 const testing = std.testing;
 const zz = @import("zigzag");
 
+fn stripAnsi(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out = std.array_list.Managed(u8).init(allocator);
+    var i: usize = 0;
+    while (i < text.len) {
+        if (text[i] == 0x1b) {
+            i += 1;
+            if (i < text.len and text[i] == '[') {
+                i += 1;
+                while (i < text.len) : (i += 1) {
+                    const c = text[i];
+                    if (c >= 0x40 and c <= 0x7E) {
+                        i += 1;
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+
+        try out.append(text[i]);
+        i += 1;
+    }
+    return out.toOwnedSlice();
+}
+
 test "Key parsing - single character" {
     const result = zz.input.keyboard.parse("a");
     try testing.expect(result.result == .key);
@@ -177,4 +202,59 @@ test "TextArea cursorDisplayColumn uses visual width for CJK" {
     area.handleKey(.{ .key = .left });
 
     try testing.expectEqual(@as(usize, 2), area.cursorDisplayColumn());
+}
+
+test "TextArea word_wrap wraps long lines in view" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.word_wrap = true;
+    area.setSize(5, 3);
+    try area.setValue("abcdefghij");
+    area.blur();
+
+    const rendered = try area.view(testing.allocator);
+    defer testing.allocator.free(rendered);
+    const plain = try stripAnsi(testing.allocator, rendered);
+    defer testing.allocator.free(plain);
+
+    try testing.expectEqualStrings("abcde\nfghij\n     ", plain);
+}
+
+test "TextArea word_wrap moves cursor vertically across wrapped segments" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.word_wrap = true;
+    area.setSize(4, 3);
+    try area.setValue("abcdefgh");
+
+    area.handleKey(.{ .key = .right });
+    area.handleKey(.{ .key = .down });
+
+    try testing.expectEqual(@as(usize, 0), area.cursor_row);
+    try testing.expectEqual(@as(usize, 5), area.cursor_col);
+
+    area.handleKey(.{ .key = .up });
+    try testing.expectEqual(@as(usize, 1), area.cursor_col);
+}
+
+test "TextArea word_wrap keeps cursor visible by wrapped row" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.word_wrap = true;
+    area.setSize(5, 2);
+    try area.setValue("abcdefghijk");
+
+    area.handleKey(.{ .key = .end });
+    area.blur();
+
+    try testing.expectEqual(@as(usize, 1), area.viewport_row);
+
+    const rendered = try area.view(testing.allocator);
+    defer testing.allocator.free(rendered);
+    const plain = try stripAnsi(testing.allocator, rendered);
+    defer testing.allocator.free(plain);
+    try testing.expectEqualStrings("fghij\nk    ", plain);
 }

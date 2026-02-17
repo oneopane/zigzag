@@ -43,6 +43,26 @@ pub const TextArea = struct {
     max_cols: ?usize,
     char_limit: ?usize,
 
+    const WrappedSegment = struct {
+        start: usize,
+        end: usize,
+        is_last: bool,
+    };
+
+    const WrappedRow = struct {
+        line_idx: usize,
+        start: usize,
+        end: usize,
+        is_first_segment: bool,
+    };
+
+    const CursorWrappedSegment = struct {
+        current_start: usize,
+        current_end: usize,
+        prev_start: ?usize,
+        is_last: bool,
+    };
+
     pub fn init(allocator: std.mem.Allocator) TextArea {
         var lines = std.array_list.Managed(std.array_list.Managed(u8)).init(allocator);
         lines.append(std.array_list.Managed(u8).init(allocator)) catch {};
@@ -367,6 +387,28 @@ pub const TextArea = struct {
     }
 
     fn moveCursorUp(self: *TextArea) void {
+        if (self.word_wrap) {
+            const max_width = self.textWidth();
+            const line = self.currentLine().items;
+            const segment = self.findCursorWrappedSegment(line, max_width);
+            const target_col = displayWidthInRange(line, segment.current_start, self.cursor_col, max_width);
+
+            if (segment.prev_start) |prev_start| {
+                const prev = wrappedSegmentAt(line, max_width, prev_start);
+                self.cursor_col = byteOffsetForDisplayCol(line, prev.start, prev.end, target_col, max_width);
+                return;
+            }
+
+            if (self.cursor_row > 0) {
+                self.cursor_row -= 1;
+                const prev_line = self.currentLine().items;
+                const prev_start = lastWrappedSegmentStart(prev_line, max_width);
+                const prev = wrappedSegmentAt(prev_line, max_width, prev_start);
+                self.cursor_col = byteOffsetForDisplayCol(prev_line, prev.start, prev.end, target_col, max_width);
+            }
+            return;
+        }
+
         if (self.cursor_row > 0) {
             self.cursor_row -= 1;
             self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
@@ -375,6 +417,27 @@ pub const TextArea = struct {
     }
 
     fn moveCursorDown(self: *TextArea) void {
+        if (self.word_wrap) {
+            const max_width = self.textWidth();
+            const line = self.currentLine().items;
+            const segment = self.findCursorWrappedSegment(line, max_width);
+            const target_col = displayWidthInRange(line, segment.current_start, self.cursor_col, max_width);
+
+            if (!segment.is_last) {
+                const next = wrappedSegmentAt(line, max_width, segment.current_end);
+                self.cursor_col = byteOffsetForDisplayCol(line, next.start, next.end, target_col, max_width);
+                return;
+            }
+
+            if (self.cursor_row < self.lines.items.len - 1) {
+                self.cursor_row += 1;
+                const next_line = self.currentLine().items;
+                const next = wrappedSegmentAt(next_line, max_width, 0);
+                self.cursor_col = byteOffsetForDisplayCol(next_line, next.start, next.end, target_col, max_width);
+            }
+            return;
+        }
+
         if (self.cursor_row < self.lines.items.len - 1) {
             self.cursor_row += 1;
             self.cursor_col = @min(self.cursor_col, self.currentLine().items.len);
@@ -410,6 +473,13 @@ pub const TextArea = struct {
     }
 
     fn pageUp(self: *TextArea) void {
+        if (self.word_wrap) {
+            for (0..@max(@as(usize, 1), @as(usize, self.height))) |_| {
+                self.moveCursorUp();
+            }
+            return;
+        }
+
         if (self.cursor_row >= self.height) {
             self.cursor_row -= self.height;
         } else {
@@ -420,6 +490,13 @@ pub const TextArea = struct {
     }
 
     fn pageDown(self: *TextArea) void {
+        if (self.word_wrap) {
+            for (0..@max(@as(usize, 1), @as(usize, self.height))) |_| {
+                self.moveCursorDown();
+            }
+            return;
+        }
+
         if (self.cursor_row + self.height < self.lines.items.len) {
             self.cursor_row += self.height;
         } else {
@@ -430,11 +507,24 @@ pub const TextArea = struct {
     }
 
     fn ensureVisible(self: *TextArea) void {
+        const visible_rows: usize = @max(@as(usize, 1), @as(usize, self.height));
+
+        if (self.word_wrap) {
+            const cursor_visual_row = self.cursorVisualRow(self.textWidth());
+            if (cursor_visual_row < self.viewport_row) {
+                self.viewport_row = cursor_visual_row;
+            } else if (cursor_visual_row >= self.viewport_row + visible_rows) {
+                self.viewport_row = cursor_visual_row - visible_rows + 1;
+            }
+            self.viewport_col = 0;
+            return;
+        }
+
         // Vertical scrolling
         if (self.cursor_row < self.viewport_row) {
             self.viewport_row = self.cursor_row;
-        } else if (self.cursor_row >= self.viewport_row + self.height) {
-            self.viewport_row = self.cursor_row - self.height + 1;
+        } else if (self.cursor_row >= self.viewport_row + visible_rows) {
+            self.viewport_row = self.cursor_row - visible_rows + 1;
         }
 
         // Horizontal scrolling using display columns
@@ -463,6 +553,67 @@ pub const TextArea = struct {
         // Check for empty content
         const is_empty = self.lines.items.len == 1 and self.lines.items[0].items.len == 0;
 
+        if (self.word_wrap) {
+            for (0..self.height) |row| {
+                if (row > 0) try writer.writeByte('\n');
+
+                const visual_row = self.viewport_row + row;
+                const wrapped_row = self.wrappedRowAt(visual_row, text_width);
+
+                // Line numbers (only on first wrapped segment of a physical line)
+                if (self.line_numbers) {
+                    if (wrapped_row) |r| {
+                        if (r.is_first_segment) {
+                            const num_str = try std.fmt.allocPrint(allocator, "{d:>4} ", .{r.line_idx + 1});
+                            defer allocator.free(num_str);
+                            const styled = try self.line_number_style.render(allocator, num_str);
+                            defer allocator.free(styled);
+                            try writer.writeAll(styled);
+                        } else {
+                            try writer.writeAll("     ");
+                        }
+                    } else {
+                        try writer.writeAll("     ");
+                    }
+                }
+
+                if (wrapped_row) |r| {
+                    const line = self.lines.items[r.line_idx];
+
+                    // Show placeholder on first empty line
+                    if (is_empty and r.line_idx == 0 and r.is_first_segment and self.placeholder.len > 0) {
+                        const styled = try self.placeholder_style.render(allocator, self.placeholder);
+                        defer allocator.free(styled);
+                        try writer.writeAll(styled);
+                        const placeholder_width = measure.width(self.placeholder);
+                        const max_width: usize = text_width;
+                        var rendered_width = @min(placeholder_width, max_width);
+                        while (rendered_width < max_width) {
+                            try writer.writeByte(' ');
+                            rendered_width += 1;
+                        }
+                        continue;
+                    }
+
+                    try self.renderWrappedLineSegment(
+                        writer,
+                        allocator,
+                        line.items,
+                        r.line_idx,
+                        r.start,
+                        r.end,
+                        text_width,
+                    );
+                } else {
+                    for (0..text_width) |_| {
+                        try writer.writeByte(' ');
+                    }
+                }
+            }
+
+            return result.toOwnedSlice();
+        }
+
         for (0..self.height) |row| {
             if (row > 0) try writer.writeByte('\n');
 
@@ -472,7 +623,9 @@ pub const TextArea = struct {
             if (self.line_numbers) {
                 if (line_idx < self.lines.items.len) {
                     const num_str = try std.fmt.allocPrint(allocator, "{d:>4} ", .{line_idx + 1});
+                    defer allocator.free(num_str);
                     const styled = try self.line_number_style.render(allocator, num_str);
+                    defer allocator.free(styled);
                     try writer.writeAll(styled);
                 } else {
                     try writer.writeAll("     ");
@@ -485,6 +638,7 @@ pub const TextArea = struct {
                 // Show placeholder on first empty line
                 if (is_empty and line_idx == 0 and self.placeholder.len > 0) {
                     const styled = try self.placeholder_style.render(allocator, self.placeholder);
+                    defer allocator.free(styled);
                     try writer.writeAll(styled);
                     continue;
                 }
@@ -495,6 +649,66 @@ pub const TextArea = struct {
         }
 
         return result.toOwnedSlice();
+    }
+
+    fn renderWrappedLineSegment(
+        self: *const TextArea,
+        writer: anytype,
+        allocator: std.mem.Allocator,
+        line: []const u8,
+        line_idx: usize,
+        start: usize,
+        end: usize,
+        max_width: u16,
+    ) !void {
+        const is_cursor_line = line_idx == self.cursor_row;
+        const width_limit: usize = max_width;
+
+        if (width_limit == 0) return;
+
+        var rendered_width: usize = 0;
+        var byte_idx = start;
+        while (byte_idx < end and rendered_width < width_limit) {
+            const is_cursor = is_cursor_line and self.focused and byte_idx == self.cursor_col;
+
+            const byte_len = std.unicode.utf8ByteSequenceLength(line[byte_idx]) catch 1;
+            if (byte_idx + byte_len > line.len) break;
+            const char_slice = line[byte_idx..][0..byte_len];
+
+            const cp = std.unicode.utf8Decode(char_slice) catch {
+                byte_idx += 1;
+                rendered_width += 1;
+                continue;
+            };
+            const cw = wrapDisplayWidth(unicode.charWidth(cp), width_limit);
+            if (rendered_width + cw > width_limit) break;
+
+            if (is_cursor) {
+                const styled = try self.cursor_style.render(allocator, char_slice);
+                defer allocator.free(styled);
+                try writer.writeAll(styled);
+            } else {
+                const styled = try self.text_style.render(allocator, char_slice);
+                defer allocator.free(styled);
+                try writer.writeAll(styled);
+            }
+
+            byte_idx += byte_len;
+            rendered_width += cw;
+        }
+
+        // Cursor at segment end
+        if (is_cursor_line and self.focused and self.cursor_col == end and end == line.len and rendered_width < width_limit) {
+            const styled = try self.cursor_style.render(allocator, " ");
+            defer allocator.free(styled);
+            try writer.writeAll(styled);
+            rendered_width += 1;
+        }
+
+        while (rendered_width < width_limit) {
+            try writer.writeByte(' ');
+            rendered_width += 1;
+        }
     }
 
     fn renderLine(self: *const TextArea, writer: anytype, allocator: std.mem.Allocator, line: []const u8, line_idx: usize, max_width: u16) !void {
@@ -539,9 +753,11 @@ pub const TextArea = struct {
 
             if (is_cursor) {
                 const styled = try self.cursor_style.render(allocator, char_slice);
+                defer allocator.free(styled);
                 try writer.writeAll(styled);
             } else {
                 const styled = try self.text_style.render(allocator, char_slice);
+                defer allocator.free(styled);
                 try writer.writeAll(styled);
             }
 
@@ -553,6 +769,7 @@ pub const TextArea = struct {
         // Cursor at end of line
         if (is_cursor_line and self.focused and byte_idx == self.cursor_col and rendered_width < max_width) {
             const styled = try self.cursor_style.render(allocator, " ");
+            defer allocator.free(styled);
             try writer.writeAll(styled);
             rendered_width += 1;
         }
@@ -582,6 +799,220 @@ pub const TextArea = struct {
             byte_idx += byte_len;
         }
         return display_col;
+    }
+
+    fn textWidth(self: *const TextArea) usize {
+        const line_num_width: usize = if (self.line_numbers) 5 else 0;
+        return self.width -| @as(u16, @intCast(line_num_width));
+    }
+
+    fn cursorVisualRow(self: *const TextArea, max_width: usize) usize {
+        var row: usize = 0;
+        for (0..self.cursor_row) |idx| {
+            row += wrappedRowCount(self.lines.items[idx].items, max_width);
+        }
+        row += wrappedRowIndexForCursor(self.lines.items[self.cursor_row].items, self.cursor_col, max_width);
+        return row;
+    }
+
+    fn wrappedRowAt(self: *const TextArea, visual_row: usize, max_width: u16) ?WrappedRow {
+        var row_index: usize = 0;
+        const width: usize = max_width;
+
+        for (self.lines.items, 0..) |line, line_idx| {
+            const line_bytes = line.items;
+            if (line_bytes.len == 0) {
+                if (row_index == visual_row) {
+                    return .{
+                        .line_idx = line_idx,
+                        .start = 0,
+                        .end = 0,
+                        .is_first_segment = true,
+                    };
+                }
+                row_index += 1;
+                continue;
+            }
+
+            var segment_start: usize = 0;
+            var first = true;
+            while (true) {
+                const segment = wrappedSegmentAt(line_bytes, width, segment_start);
+                if (row_index == visual_row) {
+                    return .{
+                        .line_idx = line_idx,
+                        .start = segment.start,
+                        .end = segment.end,
+                        .is_first_segment = first,
+                    };
+                }
+
+                row_index += 1;
+                if (segment.is_last) break;
+                segment_start = segment.end;
+                first = false;
+            }
+        }
+        return null;
+    }
+
+    fn findCursorWrappedSegment(self: *const TextArea, line: []const u8, max_width: usize) CursorWrappedSegment {
+        const clamped_cursor = clampToUtf8Boundary(line, self.cursor_col);
+        var segment_start: usize = 0;
+        var prev_start: ?usize = null;
+        while (true) {
+            const segment = wrappedSegmentAt(line, max_width, segment_start);
+            if (clamped_cursor < segment.end or segment.is_last) {
+                return .{
+                    .current_start = segment.start,
+                    .current_end = segment.end,
+                    .prev_start = prev_start,
+                    .is_last = segment.is_last,
+                };
+            }
+
+            if (segment.is_last) break;
+            prev_start = segment_start;
+            segment_start = segment.end;
+        }
+
+        return .{
+            .current_start = 0,
+            .current_end = line.len,
+            .prev_start = null,
+            .is_last = true,
+        };
+    }
+
+    fn wrappedRowCount(line: []const u8, max_width: usize) usize {
+        if (line.len == 0) return 1;
+        if (max_width == 0) return 1;
+
+        var count: usize = 0;
+        var segment_start: usize = 0;
+        while (true) {
+            const segment = wrappedSegmentAt(line, max_width, segment_start);
+            count += 1;
+            if (segment.is_last) break;
+            segment_start = segment.end;
+        }
+        return count;
+    }
+
+    fn wrappedRowIndexForCursor(line: []const u8, cursor_col: usize, max_width: usize) usize {
+        if (line.len == 0) return 0;
+        if (max_width == 0) return 0;
+
+        const clamped_cursor = clampToUtf8Boundary(line, cursor_col);
+        var index: usize = 0;
+        var segment_start: usize = 0;
+        while (true) {
+            const segment = wrappedSegmentAt(line, max_width, segment_start);
+            if (clamped_cursor < segment.end or segment.is_last) return index;
+            if (segment.is_last) return index;
+            index += 1;
+            segment_start = segment.end;
+        }
+    }
+
+    fn lastWrappedSegmentStart(line: []const u8, max_width: usize) usize {
+        if (line.len == 0 or max_width == 0) return 0;
+        var segment_start: usize = 0;
+        while (true) {
+            const segment = wrappedSegmentAt(line, max_width, segment_start);
+            if (segment.is_last) return segment_start;
+            segment_start = segment.end;
+        }
+    }
+
+    fn wrappedSegmentAt(line: []const u8, max_width: usize, start: usize) WrappedSegment {
+        if (line.len == 0 or max_width == 0 or start >= line.len) {
+            return .{
+                .start = @min(start, line.len),
+                .end = @min(start, line.len),
+                .is_last = true,
+            };
+        }
+
+        var i = start;
+        var segment_width: usize = 0;
+
+        while (i < line.len) {
+            const byte_len = std.unicode.utf8ByteSequenceLength(line[i]) catch 1;
+            if (i + byte_len > line.len) break;
+
+            const cp = std.unicode.utf8Decode(line[i..][0..byte_len]) catch {
+                if (segment_width > 0 and segment_width + 1 > max_width) break;
+                segment_width += 1;
+                i += 1;
+                continue;
+            };
+
+            const char_width = wrapDisplayWidth(unicode.charWidth(cp), max_width);
+            if (segment_width > 0 and segment_width + char_width > max_width) break;
+
+            segment_width += char_width;
+            i += byte_len;
+        }
+
+        return .{
+            .start = start,
+            .end = i,
+            .is_last = i >= line.len,
+        };
+    }
+
+    fn displayWidthInRange(line: []const u8, start: usize, end: usize, max_width: usize) usize {
+        if (max_width == 0) return 0;
+        const clamped_end = clampToUtf8Boundary(line, @min(end, line.len));
+        var width: usize = 0;
+        var i = @min(start, clamped_end);
+        while (i < clamped_end) {
+            const byte_len = std.unicode.utf8ByteSequenceLength(line[i]) catch 1;
+            if (i + byte_len > line.len) break;
+            const cp = std.unicode.utf8Decode(line[i..][0..byte_len]) catch {
+                width += 1;
+                i += 1;
+                continue;
+            };
+            width += wrapDisplayWidth(unicode.charWidth(cp), max_width);
+            i += byte_len;
+        }
+        return width;
+    }
+
+    fn byteOffsetForDisplayCol(line: []const u8, start: usize, end: usize, target_col: usize, max_width: usize) usize {
+        if (max_width == 0) return @min(start, line.len);
+
+        const clamped_start = clampToUtf8Boundary(line, @min(start, line.len));
+        const clamped_end = clampToUtf8Boundary(line, @min(end, line.len));
+        var col: usize = 0;
+        var i = clamped_start;
+        while (i < clamped_end) {
+            if (col >= target_col) return i;
+
+            const byte_len = std.unicode.utf8ByteSequenceLength(line[i]) catch 1;
+            if (i + byte_len > line.len) break;
+            const cp = std.unicode.utf8Decode(line[i..][0..byte_len]) catch {
+                if (col + 1 > target_col) return i;
+                col += 1;
+                i += 1;
+                continue;
+            };
+
+            const char_width = wrapDisplayWidth(unicode.charWidth(cp), max_width);
+            if (col + char_width > target_col) return i;
+
+            col += char_width;
+            i += byte_len;
+        }
+        return clamped_end;
+    }
+
+    fn wrapDisplayWidth(char_width: usize, max_width: usize) usize {
+        if (max_width == 0) return 0;
+        if (char_width == 0) return 0;
+        return @min(char_width, max_width);
     }
 
     fn clampCursorToLineBoundary(self: *TextArea) void {
