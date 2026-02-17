@@ -181,10 +181,21 @@ pub fn disableMouse(state: *State, writer: anytype) !void {
 
 /// Read available input (Windows uses std.io)
 pub fn readInput(state: *State, buffer: []u8, timeout_ms: i32) !usize {
-    _ = state;
-    _ = timeout_ms;
-    // On Windows, we use the standard reader which handles VT input
-    const stdin = std.fs.File.stdin();
+    if (state.stdin_handle == windows.INVALID_HANDLE_VALUE) return 0;
+
+    // Match POSIX behavior: wait up to timeout_ms for input, then return 0.
+    const wait_ms: windows.DWORD = if (timeout_ms < 0)
+        windows.INFINITE
+    else
+        @intCast(timeout_ms);
+
+    windows.WaitForSingleObject(state.stdin_handle, wait_ms) catch |err| switch (err) {
+        error.WaitTimeOut => return 0,
+        else => return 0,
+    };
+
+    // Read from the configured stdin handle after it is signaled as readable.
+    const stdin: std.fs.File = .{ .handle = state.stdin_handle };
     return stdin.read(buffer) catch 0;
 }
 
