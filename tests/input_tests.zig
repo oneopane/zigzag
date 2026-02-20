@@ -279,11 +279,69 @@ test "TextArea setSize without setValue pads placeholder to full width" {
     const plain = try stripAnsi(testing.allocator, rendered);
     defer testing.allocator.free(plain);
 
-    // Verify first line contains placeholder padded to 50 chars
+    // Verify full 50x3 viewport shape
     var lines = std.mem.splitScalar(u8, plain, '\n');
-    const first_line = lines.next().?;
-    try testing.expectEqual(@as(usize, 50), first_line.len);
-    try testing.expect(std.mem.startsWith(u8, first_line, "Type here"));
+    const line0 = lines.next().?;
+    const line1 = lines.next().?;
+    const line2 = lines.next().?;
+    try testing.expectEqual(@as(usize, 50), line0.len);
+    try testing.expect(std.mem.startsWith(u8, line0, "Type here"));
+    try testing.expectEqual(@as(usize, 50), line1.len);
+    try testing.expectEqual(@as(usize, 50), line2.len);
+    for (line1) |c| {
+        try testing.expectEqual(@as(u8, ' '), c);
+    }
+    for (line2) |c| {
+        try testing.expectEqual(@as(u8, ' '), c);
+    }
+    try testing.expect(lines.next() == null);
+}
+
+test "TextArea placeholder wider than width is clipped and padded" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.placeholder = "This is a very long placeholder";
+    area.setSize(10, 2);
+
+    const rendered = try area.view(testing.allocator);
+    defer testing.allocator.free(rendered);
+    const plain = try stripAnsi(testing.allocator, rendered);
+    defer testing.allocator.free(plain);
+
+    var lines = std.mem.splitScalar(u8, plain, '\n');
+    const line0 = lines.next().?;
+    const line1 = lines.next().?;
+    try testing.expectEqual(@as(usize, 10), line0.len);
+    try testing.expectEqual(@as(usize, 10), line1.len);
+    for (line1) |c| {
+        try testing.expectEqual(@as(u8, ' '), c);
+    }
+    try testing.expect(lines.next() == null);
+}
+
+test "TextArea wrapped placeholder wider than width is clipped and padded" {
+    var area = zz.TextArea.init(testing.allocator);
+    defer area.deinit();
+
+    area.word_wrap = true;
+    area.placeholder = "This is a very long placeholder";
+    area.setSize(10, 2);
+
+    const rendered = try area.view(testing.allocator);
+    defer testing.allocator.free(rendered);
+    const plain = try stripAnsi(testing.allocator, rendered);
+    defer testing.allocator.free(plain);
+
+    var lines = std.mem.splitScalar(u8, plain, '\n');
+    const line0 = lines.next().?;
+    const line1 = lines.next().?;
+    try testing.expectEqual(@as(usize, 10), line0.len);
+    try testing.expectEqual(@as(usize, 10), line1.len);
+    for (line1) |c| {
+        try testing.expectEqual(@as(u8, ' '), c);
+    }
+    try testing.expect(lines.next() == null);
 }
 
 test "TextArea pads empty rows to full width" {
@@ -309,15 +367,14 @@ test "TextArea pads empty rows to full width" {
     try testing.expect(std.mem.startsWith(u8, line0, "Single line"));
 
     // Remaining lines should be padded to 30 chars of spaces
-    var line_count: usize = 1;
-    while (lines.next()) |line| : (line_count += 1) {
-        if (line_count >= 5) break;
+    for (0..4) |_| {
+        const line = lines.next().?;
         try testing.expectEqual(@as(usize, 30), line.len);
-        // Verify it's all spaces
         for (line) |c| {
             try testing.expectEqual(@as(u8, ' '), c);
         }
     }
+    try testing.expect(lines.next() == null);
 }
 
 test "TextArea renders at correct width after setSize without setValue" {
@@ -340,21 +397,16 @@ test "TextArea renders at correct width after setSize without setValue" {
     const rendered = try area.view(testing.allocator);
     defer testing.allocator.free(rendered);
 
-    // Verify content length is reasonable for 80x24 with ANSI codes
-    // Expected: ~80 * 24 = 1920 chars + newlines + ANSI codes
-    try testing.expect(rendered.len > 1000);
-
     // Strip ANSI and verify dimensions
     const plain = try stripAnsi(testing.allocator, rendered);
     defer testing.allocator.free(plain);
 
     var lines = std.mem.splitScalar(u8, plain, '\n');
-    var line_count: usize = 0;
-    while (lines.next()) |line| : (line_count += 1) {
-        if (line_count >= 24) break;
+    for (0..24) |_| {
+        const line = lines.next().?;
         try testing.expectEqual(@as(usize, 80), line.len);
     }
-    try testing.expectEqual(@as(usize, 24), line_count);
+    try testing.expect(lines.next() == null);
 }
 
 test "TextArea multiple resize operations maintain correct width" {
