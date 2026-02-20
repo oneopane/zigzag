@@ -5,7 +5,6 @@ const std = @import("std");
 const keys = @import("../input/keys.zig");
 const style_mod = @import("../style/style.zig");
 const Color = @import("../style/color.zig").Color;
-const measure = @import("../layout/measure.zig");
 const unicode = @import("../unicode.zig");
 
 pub const TextArea = struct {
@@ -582,16 +581,7 @@ pub const TextArea = struct {
 
                     // Show placeholder on first empty line
                     if (is_empty and r.line_idx == 0 and r.is_first_segment and self.placeholder.len > 0) {
-                        const styled = try self.placeholder_style.render(allocator, self.placeholder);
-                        defer allocator.free(styled);
-                        try writer.writeAll(styled);
-                        const placeholder_width = measure.width(self.placeholder);
-                        const max_width: usize = text_width;
-                        var rendered_width = @min(placeholder_width, max_width);
-                        while (rendered_width < max_width) {
-                            try writer.writeByte(' ');
-                            rendered_width += 1;
-                        }
+                        try self.renderPlaceholder(writer, allocator, text_width);
                         continue;
                     }
 
@@ -637,18 +627,54 @@ pub const TextArea = struct {
 
                 // Show placeholder on first empty line
                 if (is_empty and line_idx == 0 and self.placeholder.len > 0) {
-                    const styled = try self.placeholder_style.render(allocator, self.placeholder);
-                    defer allocator.free(styled);
-                    try writer.writeAll(styled);
+                    try self.renderPlaceholder(writer, allocator, text_width);
                     continue;
                 }
 
                 // Render line content with cursor
                 try self.renderLine(writer, allocator, line.items, line_idx, text_width);
+            } else {
+                // Pad empty rows to full width
+                var i: usize = 0;
+                while (i < text_width) : (i += 1) {
+                    try writer.writeByte(' ');
+                }
             }
         }
 
         return result.toOwnedSlice();
+    }
+
+    fn renderPlaceholder(self: *const TextArea, writer: anytype, allocator: std.mem.Allocator, max_width: u16) !void {
+        const width_limit: usize = max_width;
+        if (width_limit == 0) return;
+
+        var rendered_width: usize = 0;
+        var byte_idx: usize = 0;
+        while (byte_idx < self.placeholder.len and rendered_width < width_limit) {
+            const byte_len = std.unicode.utf8ByteSequenceLength(self.placeholder[byte_idx]) catch 1;
+            if (byte_idx + byte_len > self.placeholder.len) break;
+            const char_slice = self.placeholder[byte_idx..][0..byte_len];
+
+            const cp = std.unicode.utf8Decode(char_slice) catch {
+                byte_idx += 1;
+                rendered_width += 1;
+                continue;
+            };
+            const cw = wrapDisplayWidth(unicode.charWidth(cp), width_limit);
+            if (rendered_width + cw > width_limit) break;
+
+            const styled = try self.placeholder_style.render(allocator, char_slice);
+            defer allocator.free(styled);
+            try writer.writeAll(styled);
+            byte_idx += byte_len;
+            rendered_width += cw;
+        }
+
+        while (rendered_width < width_limit) {
+            try writer.writeByte(' ');
+            rendered_width += 1;
+        }
     }
 
     fn renderWrappedLineSegment(
