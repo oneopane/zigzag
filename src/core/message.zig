@@ -19,6 +19,7 @@ pub const WindowSize = struct {
 
 /// Tick message for timer-based updates
 pub const Tick = struct {
+    /// Monotonic timestamp in nanoseconds since program start.
     timestamp: i64,
     delta: u64, // nanoseconds since last tick
 };

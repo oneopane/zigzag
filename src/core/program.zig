@@ -45,8 +45,9 @@ pub fn Program(comptime Model: type) type {
         context: Context,
         options: Options,
         running: bool,
-        start_time: i128,
-        last_frame_time: i128,
+        clock: std.time.Timer,
+        start_time: u64,
+        last_frame_time: u64,
         pending_tick: ?u64,
         every_interval: ?u64,
         last_every_tick: u64,
@@ -67,6 +68,8 @@ pub fn Program(comptime Model: type) type {
         /// Initialize with custom options
         pub fn initWithOptions(allocator: std.mem.Allocator, options: Options) !Self {
             const arena = std.heap.ArenaAllocator.init(allocator);
+            var clock = try std.time.Timer.start();
+            const now = clock.read();
             const self = Self{
                 .allocator = allocator,
                 .arena = arena,
@@ -77,8 +80,9 @@ pub fn Program(comptime Model: type) type {
                 .context = Context.init(allocator, allocator),
                 .options = options,
                 .running = false,
-                .start_time = std.time.nanoTimestamp(),
-                .last_frame_time = std.time.nanoTimestamp(),
+                .clock = clock,
+                .start_time = now,
+                .last_frame_time = now,
                 .pending_tick = null,
                 .every_interval = null,
                 .last_every_tick = 0,
@@ -173,6 +177,13 @@ pub fn Program(comptime Model: type) type {
             self.context.kitty_text_sizing = width_caps.kitty_text_sizing;
             unicode.setWidthStrategy(effective_width_strategy);
 
+            self.clock.reset();
+            self.start_time = self.clock.read();
+            self.last_frame_time = self.start_time;
+            self.context.elapsed = 0;
+            self.context.delta = 0;
+            self.context.frame = 0;
+
             self.resetFrameAllocator();
 
             // Initialize the model
@@ -189,8 +200,8 @@ pub fn Program(comptime Model: type) type {
 
         /// Execute a single frame: poll input, process events, render.
         pub fn tick(self: *Self) !void {
-            const now = std.time.nanoTimestamp();
-            const delta = @as(u64, @intCast(now - self.last_frame_time));
+            const now = self.clock.read();
+            const delta = now - self.last_frame_time;
 
             // Enforce framerate limit
             const min_frame_time_ns: u64 = if (self.options.fps > 0)
@@ -199,14 +210,15 @@ pub fn Program(comptime Model: type) type {
                 16_666_666; // ~60fps default
 
             if (delta < min_frame_time_ns) {
-                std.Thread.sleep(min_frame_time_ns - delta);
+                sleepNs(min_frame_time_ns - delta);
             }
 
-            self.last_frame_time = std.time.nanoTimestamp();
-            const actual_delta = @as(u64, @intCast(self.last_frame_time - now + @as(i128, @intCast(delta))));
+            const frame_time = self.clock.read();
+            const actual_delta = frame_time - self.last_frame_time;
+            self.last_frame_time = frame_time;
 
             self.context.delta = actual_delta;
-            self.context.elapsed = @intCast(self.last_frame_time - self.start_time);
+            self.context.elapsed = frame_time - self.start_time;
             self.context.frame += 1;
 
             self.resetFrameAllocator();
@@ -252,8 +264,8 @@ pub fn Program(comptime Model: type) type {
                     // Deliver tick to user's update if Model.Msg has a tick variant
                     if (@hasField(UserMsg, "tick")) {
                         const user_msg = UserMsg{ .tick = .{
-                            .timestamp = @intCast(now),
-                            .delta = delta,
+                            .timestamp = @intCast(frame_time),
+                            .delta = actual_delta,
                         } };
                         const cmd = self.dispatchToModel(user_msg);
                         try self.processCommand(cmd);
@@ -267,8 +279,8 @@ pub fn Program(comptime Model: type) type {
                     self.last_every_tick = self.context.elapsed;
                     if (@hasField(UserMsg, "tick")) {
                         const user_msg = UserMsg{ .tick = .{
-                            .timestamp = @intCast(now),
-                            .delta = delta,
+                            .timestamp = @intCast(frame_time),
+                            .delta = actual_delta,
                         } };
                         const cmd = self.dispatchToModel(user_msg);
                         try self.processCommand(cmd);
@@ -381,6 +393,9 @@ pub fn Program(comptime Model: type) type {
                 term.setup() catch {};
             }
 
+            // Avoid a large post-resume frame delta.
+            self.last_frame_time = self.clock.read();
+
             // Force re-render
             self.last_view_hash = 0;
 
@@ -481,6 +496,58 @@ pub fn Program(comptime Model: type) type {
                         try term.flush();
                     }
                 },
+            }
+        }
+
+        fn sleepNs(nanoseconds: u64) void {
+            if (nanoseconds == 0) return;
+            const ns_per_s: u64 = if (@hasDecl(std.time, "ns_per_s")) std.time.ns_per_s else 1_000_000_000;
+            const ns_per_ms: u64 = if (@hasDecl(std.time, "ns_per_ms")) std.time.ns_per_ms else 1_000_000;
+
+            // Zig 0.15 API path.
+            if (@hasDecl(std.Thread, "sleep")) {
+                std.Thread.sleep(nanoseconds);
+                return;
+            }
+
+            // Zig 0.16+ API path.
+            if (@hasDecl(std, "Io")) {
+                const Io = std.Io;
+                if (@hasDecl(Io, "Threaded") and
+                    @hasDecl(Io, "Clock") and
+                    @hasDecl(Io.Clock, "Duration") and
+                    @hasDecl(Io.Clock.Duration, "fromNanoseconds") and
+                    @hasDecl(Io.Clock.Duration, "sleep"))
+                {
+                    var threaded_io: Io.Threaded = .init_single_threaded;
+                    const io = threaded_io.io();
+                    const duration = Io.Clock.Duration.fromNanoseconds(@intCast(nanoseconds));
+                    duration.sleep(io) catch {};
+                    return;
+                }
+            }
+
+            // Fallback for targets/environments where the above are unavailable.
+            if (@hasDecl(std, "os") and @hasDecl(std.os, "windows") and builtin.os.tag == .windows) {
+                const windows = std.os.windows;
+                const big_ms_from_ns = nanoseconds / ns_per_ms;
+                const ms = std.math.cast(windows.DWORD, big_ms_from_ns) orelse std.math.maxInt(windows.DWORD);
+                windows.kernel32.Sleep(ms);
+                return;
+            }
+
+            if (@hasDecl(std, "posix") and @hasDecl(std.posix, "nanosleep")) {
+                const seconds = nanoseconds / ns_per_s;
+                const rem_ns = nanoseconds % ns_per_s;
+                std.posix.nanosleep(seconds, rem_ns);
+                return;
+            }
+
+            // Last resort: spin for the requested duration.
+            var timer = std.time.Timer.start() catch return;
+            const start_ns = timer.read();
+            while (timer.read() - start_ns < nanoseconds) {
+                std.atomic.spinLoopHint();
             }
         }
 
