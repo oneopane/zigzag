@@ -24,6 +24,13 @@ pub const UnicodeWidthCapabilities = struct {
 
 pub const ImageCapabilities = struct {
     kitty_graphics: bool = false,
+    iterm2_inline_image: bool = false,
+    sixel: bool = false,
+};
+
+const Iterm2Capabilities = struct {
+    inline_image: bool = false,
+    sixel: bool = false,
 };
 
 pub const KittyImageFormat = enum(u16) {
@@ -49,6 +56,28 @@ pub const KittyImageFileOptions = struct {
     placement_id: ?u32 = null,
     move_cursor: bool = true,
     quiet: bool = true,
+};
+
+pub const Iterm2ImageFileOptions = struct {
+    width_cells: ?u16 = null,
+    height_cells: ?u16 = null,
+    preserve_aspect_ratio: bool = true,
+    move_cursor: bool = true,
+};
+
+pub const ImageFileOptions = struct {
+    width_cells: ?u16 = null,
+    height_cells: ?u16 = null,
+    preserve_aspect_ratio: bool = true,
+    image_id: ?u32 = null,
+    placement_id: ?u32 = null,
+    move_cursor: bool = true,
+    quiet: bool = true,
+};
+
+pub const SixelImageFileOptions = struct {
+    /// Optional max captured converter output (bytes).
+    max_output_bytes: usize = 32 * 1024 * 1024,
 };
 
 /// Terminal configuration options
@@ -312,6 +341,18 @@ pub const Terminal = struct {
         return self.image_caps.kitty_graphics;
     }
 
+    pub fn supportsIterm2InlineImages(self: *const Terminal) bool {
+        return self.image_caps.iterm2_inline_image;
+    }
+
+    pub fn supportsImages(self: *const Terminal) bool {
+        return self.supportsKittyGraphics() or self.supportsIterm2InlineImages() or self.supportsSixel();
+    }
+
+    pub fn supportsSixel(self: *const Terminal) bool {
+        return self.image_caps.sixel;
+    }
+
     /// Draw image bytes using Kitty graphics protocol (`t=d`).
     /// Returns `false` when unsupported or no data is provided.
     pub fn drawKittyImage(self: *Terminal, image_data: []const u8, options: KittyImageOptions) !bool {
@@ -354,6 +395,98 @@ pub const Terminal = struct {
         return true;
     }
 
+    /// Draw a file image via iTerm2 inline image protocol (`OSC 1337`).
+    /// Returns `false` when unsupported or path is empty.
+    pub fn drawIterm2ImageFromFile(self: *Terminal, path: []const u8, options: Iterm2ImageFileOptions) !bool {
+        if (!self.image_caps.iterm2_inline_image or path.len == 0) return false;
+
+        var file = try std.fs.cwd().openFile(path, .{});
+        defer file.close();
+        const stat = try file.stat();
+
+        var params_buf: [192]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&params_buf);
+        const params_writer = stream.writer();
+
+        try params_writer.writeAll("inline=1");
+        if (options.width_cells) |cols| try params_writer.print(";width={d}", .{cols});
+        if (options.height_cells) |rows| try params_writer.print(";height={d}", .{rows});
+        try params_writer.print(";preserveAspectRatio={d}", .{if (options.preserve_aspect_ratio) @as(u8, 1) else @as(u8, 0)});
+        if (!options.move_cursor) try params_writer.writeAll(";doNotMoveCursor=1");
+        try params_writer.print(";size={d}", .{stat.size});
+        const file_name = std.fs.path.basename(path);
+        const file_name_b64_len = std.base64.standard.Encoder.calcSize(file_name.len);
+        if (file_name_b64_len <= 512) {
+            var file_name_b64_buf: [512]u8 = undefined;
+            const file_name_b64 = std.base64.standard.Encoder.encode(file_name_b64_buf[0..file_name_b64_len], file_name);
+            try params_writer.print(";name={s}", .{file_name_b64});
+        }
+
+        try self.sendIterm2InlineImagePayload(stream.getWritten(), &file, stat.size);
+        return true;
+    }
+
+    /// Draw an image file using the best available protocol.
+    /// Prefers Kitty graphics, then iTerm2 inline images.
+    pub fn drawImageFromFile(self: *Terminal, path: []const u8, options: ImageFileOptions) !bool {
+        if (self.image_caps.kitty_graphics) {
+            return self.drawKittyImageFromFile(path, .{
+                .width_cells = options.width_cells,
+                .height_cells = options.height_cells,
+                .image_id = options.image_id,
+                .placement_id = options.placement_id,
+                .move_cursor = options.move_cursor,
+                .quiet = options.quiet,
+            });
+        }
+        if (self.image_caps.iterm2_inline_image) {
+            return self.drawIterm2ImageFromFile(path, .{
+                .width_cells = options.width_cells,
+                .height_cells = options.height_cells,
+                .preserve_aspect_ratio = options.preserve_aspect_ratio,
+                .move_cursor = options.move_cursor,
+            });
+        }
+        if (self.image_caps.sixel) {
+            return self.drawSixelFromFile(path, .{});
+        }
+        return false;
+    }
+
+    /// Draw a Sixel image from file.
+    /// Supports either:
+    /// - pre-encoded `.sixel`/`.six` data files, or
+    /// - regular image files converted through `img2sixel` when available.
+    pub fn drawSixelFromFile(self: *Terminal, path: []const u8, options: SixelImageFileOptions) !bool {
+        if (!self.image_caps.sixel or path.len == 0) return false;
+
+        if (isSixelDataPath(path)) {
+            var file = try std.fs.cwd().openFile(path, .{});
+            defer file.close();
+            try self.sendSixelPayloadFromFile(&file);
+            return true;
+        }
+
+        if (!commandExists("img2sixel")) return false;
+
+        const argv = [_][]const u8{ "img2sixel", path };
+        const result = try std.process.Child.run(.{
+            .allocator = std.heap.page_allocator,
+            .argv = &argv,
+            .max_output_bytes = options.max_output_bytes,
+        });
+        defer std.heap.page_allocator.free(result.stdout);
+        defer std.heap.page_allocator.free(result.stderr);
+
+        switch (result.term) {
+            .Exited => |code| if (code != 0) return error.BrokenPipe,
+            else => return error.BrokenPipe,
+        }
+
+        try self.sendSixelPayload(result.stdout);
+        return true;
+    }
+
     fn detectUnicodeWidthCapabilities(self: *Terminal) void {
         self.unicode_width_caps = .{
             .kitty_text_sizing = self.queryKittyTextSizingSupport() catch false,
@@ -374,8 +507,48 @@ pub const Terminal = struct {
     }
 
     fn detectImageCapabilities(self: *Terminal) void {
+        if (!self.isTty()) {
+            self.image_caps = .{};
+            return;
+        }
+
+        const term_features_owned = std.process.getEnvVarOwned(std.heap.page_allocator, "TERM_FEATURES") catch null;
+        defer if (term_features_owned) |value| std.heap.page_allocator.free(value);
+        const term_features = if (term_features_owned) |value| value else "";
+
+        const kitty_candidate = looksLikeKittyTerminal() or
+            envVarEquals("TERM_PROGRAM", "WezTerm") or
+            envVarContains("TERM", "wezterm") or
+            envVarContains("TERM", "ghostty");
+        const iterm_candidate = looksLikeIterm2Terminal() or
+            envVarEquals("TERM_PROGRAM", "WezTerm");
+        const in_multiplexer = isInsideMultiplexer();
+
+        var kitty = false;
+        var iterm = iterm_candidate or termFeaturesContain(term_features, "F");
+        var sixel = looksLikeSixelTerminal() or termFeaturesContain(term_features, "Sx");
+
+        if (kitty_candidate) {
+            kitty = self.queryKittyGraphicsSupport() catch false;
+            // Keep an env fallback only outside multiplexers where probe failures are uncommon.
+            if (!kitty and !in_multiplexer) {
+                kitty = envVarExists("KITTY_WINDOW_ID");
+            }
+        }
+
+        if (iterm_candidate or term_features.len > 0) {
+            if (self.queryIterm2Capabilities() catch null) |caps| {
+                iterm = iterm or caps.inline_image;
+                sixel = sixel or caps.sixel;
+            }
+        }
+
+        if (!sixel) sixel = self.queryPrimaryDeviceAttributesHasParam(4) catch false;
+
         self.image_caps = .{
-            .kitty_graphics = self.isTty() and looksLikeKittyTerminal(),
+            .kitty_graphics = kitty,
+            .iterm2_inline_image = iterm,
+            .sixel = sixel,
         };
     }
 
@@ -413,6 +586,241 @@ pub const Terminal = struct {
             if (!has_more) break;
             src_index += take;
         }
+    }
+
+    fn sendIterm2InlineImagePayload(self: *Terminal, params: []const u8, file: *std.fs.File, file_size: u64) !void {
+        const encoder = std.base64.standard.Encoder;
+        var raw_buf: [3072]u8 = undefined;
+        var b64_buf: [4096]u8 = undefined;
+        const encoded_total = std.math.cast(usize, encoder.calcSize(@intCast(file_size))) orelse std.math.maxInt(usize);
+        const single_sequence_soft_limit: usize = 750 * 1024;
+
+        if (encoded_total <= single_sequence_soft_limit) {
+            try self.writeBytes(ansi.OSC ++ "1337;File=");
+            try self.writeBytes(params);
+            try self.writeBytes(":");
+
+            while (true) {
+                const n = try file.read(&raw_buf);
+                if (n == 0) break;
+                const encoded_len = encoder.calcSize(n);
+                const encoded = encoder.encode(b64_buf[0..encoded_len], raw_buf[0..n]);
+                try self.writeBytes(encoded);
+            }
+            try self.writeBytes("\x07");
+            return;
+        }
+
+        // iTerm2 supports multipart transfer to avoid oversized OSC sequences.
+        try self.writeBytes(ansi.OSC ++ "1337;MultipartFile=");
+        try self.writeBytes(params);
+        try self.writeBytes("\x07");
+
+        while (true) {
+            const n = try file.read(&raw_buf);
+            if (n == 0) break;
+            const encoded_len = encoder.calcSize(n);
+            const encoded = encoder.encode(b64_buf[0..encoded_len], raw_buf[0..n]);
+            try self.writeBytes(ansi.OSC ++ "1337;FilePart=");
+            try self.writeBytes(encoded);
+            try self.writeBytes("\x07");
+        }
+
+        try self.writeBytes(ansi.OSC ++ "1337;FileEnd\x07");
+    }
+
+    fn sendSixelPayloadFromFile(self: *Terminal, file: *std.fs.File) !void {
+        var payload_buf: [4096]u8 = undefined;
+        var first_read = true;
+        var wrapped = false;
+
+        while (true) {
+            const n = try file.read(&payload_buf);
+            if (n == 0) break;
+            const chunk = payload_buf[0..n];
+
+            if (first_read) {
+                first_read = false;
+                if (isLikelyFullSixelSequence(chunk)) {
+                    wrapped = true;
+                } else {
+                    try self.writeBytes(ansi.DCS ++ "q");
+                }
+            }
+            try self.writeBytes(chunk);
+        }
+
+        if (!first_read and !wrapped) {
+            try self.writeBytes(ansi.ST);
+        }
+    }
+
+    fn sendSixelPayload(self: *Terminal, bytes: []const u8) !void {
+        if (bytes.len == 0) return;
+        if (isLikelyFullSixelSequence(bytes)) {
+            try self.writeBytes(bytes);
+            return;
+        }
+        try self.writeBytes(ansi.DCS ++ "q");
+        try self.writeBytes(bytes);
+        try self.writeBytes(ansi.ST);
+    }
+
+    fn queryKittyGraphicsSupport(self: *Terminal) !bool {
+        const probe_id: u32 = 9931;
+        self.drainInput();
+        try ansi.kittyGraphics(self.writer(), "a=q,i=9931,s=1,v=1,t=d,f=24", "AAAA");
+        try self.flush();
+
+        var collected: [1024]u8 = undefined;
+        var collected_len: usize = 0;
+        const deadline_ms = std.time.milliTimestamp() + 180;
+
+        while (std.time.milliTimestamp() < deadline_ms) {
+            var chunk: [128]u8 = undefined;
+            const n = self.readInput(&chunk, 30) catch 0;
+            if (n == 0) continue;
+
+            const copy_len = @min(n, collected.len - collected_len);
+            if (copy_len > 0) {
+                @memcpy(collected[collected_len .. collected_len + copy_len], chunk[0..copy_len]);
+                collected_len += copy_len;
+            }
+
+            if (parseKittyGraphicsProbeResponse(collected[0..collected_len], probe_id)) |supported| {
+                return supported;
+            }
+        }
+
+        return false;
+    }
+
+    fn parseKittyGraphicsProbeResponse(bytes: []const u8, probe_id: u32) ?bool {
+        const prefix = "\x1b_G";
+        var search_from: usize = 0;
+
+        var id_buf: [24]u8 = undefined;
+        const expected_id = std.fmt.bufPrint(&id_buf, "i={d}", .{probe_id}) catch return null;
+
+        while (search_from < bytes.len) {
+            const start = std.mem.indexOfPos(u8, bytes, search_from, prefix) orelse return null;
+            const content_start = start + prefix.len;
+            const semicolon = std.mem.indexOfScalarPos(u8, bytes, content_start, ';') orelse return null;
+            const st_index = indexOfSt(bytes, semicolon + 1) orelse return null;
+
+            const params = bytes[content_start..semicolon];
+            const payload = bytes[semicolon + 1 .. st_index];
+
+            if (std.mem.indexOf(u8, params, expected_id) != null) {
+                return std.mem.startsWith(u8, payload, "OK");
+            }
+
+            search_from = st_index + 2;
+        }
+
+        return null;
+    }
+
+    fn queryIterm2Capabilities(self: *Terminal) !?Iterm2Capabilities {
+        self.drainInput();
+        try self.writeBytes(ansi.OSC ++ "1337;Capabilities\x07");
+        try self.flush();
+
+        var collected: [2048]u8 = undefined;
+        var collected_len: usize = 0;
+        const deadline_ms = std.time.milliTimestamp() + 180;
+
+        while (std.time.milliTimestamp() < deadline_ms) {
+            var chunk: [128]u8 = undefined;
+            const n = self.readInput(&chunk, 30) catch 0;
+            if (n == 0) continue;
+
+            const copy_len = @min(n, collected.len - collected_len);
+            if (copy_len > 0) {
+                @memcpy(collected[collected_len .. collected_len + copy_len], chunk[0..copy_len]);
+                collected_len += copy_len;
+            }
+
+            if (parseIterm2CapabilitiesResponse(collected[0..collected_len])) |caps| {
+                return caps;
+            }
+        }
+
+        return null;
+    }
+
+    fn parseIterm2CapabilitiesResponse(bytes: []const u8) ?Iterm2Capabilities {
+        const prefix = "\x1b]1337;Capabilities=";
+        const start = std.mem.indexOf(u8, bytes, prefix) orelse return null;
+        const payload_start = start + prefix.len;
+        const end = indexOfOscTerminator(bytes, payload_start) orelse return null;
+        const payload = bytes[payload_start..end];
+        return .{
+            .inline_image = termFeaturesContain(payload, "F"),
+            .sixel = termFeaturesContain(payload, "Sx"),
+        };
+    }
+
+    fn queryPrimaryDeviceAttributesHasParam(self: *Terminal, needle: u16) !bool {
+        self.drainInput();
+        try self.writeBytes(ansi.CSI ++ "c");
+        try self.flush();
+
+        var collected: [1024]u8 = undefined;
+        var collected_len: usize = 0;
+        const deadline_ms = std.time.milliTimestamp() + 120;
+
+        while (std.time.milliTimestamp() < deadline_ms) {
+            var chunk: [128]u8 = undefined;
+            const n = self.readInput(&chunk, 25) catch 0;
+            if (n == 0) continue;
+
+            const copy_len = @min(n, collected.len - collected_len);
+            if (copy_len > 0) {
+                @memcpy(collected[collected_len .. collected_len + copy_len], chunk[0..copy_len]);
+                collected_len += copy_len;
+            }
+
+            if (parsePrimaryDeviceAttributes(collected[0..collected_len])) |params| {
+                return primaryDeviceAttributesHasParam(params, needle);
+            }
+        }
+
+        return false;
+    }
+
+    fn parsePrimaryDeviceAttributes(bytes: []const u8) ?[]const u8 {
+        const prefix = "\x1b[";
+        var search_from: usize = 0;
+
+        while (search_from < bytes.len) {
+            const start = std.mem.indexOfPos(u8, bytes, search_from, prefix) orelse return null;
+            var i = start + prefix.len;
+
+            if (i < bytes.len and bytes[i] == '?') i += 1;
+            const params_start = i;
+
+            while (i < bytes.len and ((bytes[i] >= '0' and bytes[i] <= '9') or bytes[i] == ';')) : (i += 1) {}
+            if (i >= bytes.len) return null;
+
+            if (bytes[i] == 'c' and i > params_start) {
+                return bytes[params_start..i];
+            }
+
+            search_from = start + 1;
+        }
+
+        return null;
+    }
+
+    fn primaryDeviceAttributesHasParam(params: []const u8, needle: u16) bool {
+        var it = std.mem.splitScalar(u8, params, ';');
+        while (it.next()) |part| {
+            if (part.len == 0) continue;
+            const value = std.fmt.parseInt(u16, part, 10) catch continue;
+            if (value == needle) return true;
+        }
+        return false;
     }
 
     fn queryMode2027Support(self: *Terminal) !bool {
@@ -566,6 +974,56 @@ pub const Terminal = struct {
         return envVarExists("TMUX") or envVarExists("ZELLIJ") or envVarContains("TERM", "screen");
     }
 
+    fn drainInput(self: *Terminal) void {
+        var buf: [128]u8 = undefined;
+        while (true) {
+            const n = self.readInput(&buf, 0) catch return;
+            if (n == 0) return;
+        }
+    }
+
+    fn termFeaturesContain(features: []const u8, needle: []const u8) bool {
+        if (features.len == 0 or needle.len == 0) return false;
+
+        var i: usize = 0;
+        while (i < features.len) {
+            if (!std.ascii.isUpper(features[i])) {
+                i += 1;
+                continue;
+            }
+
+            var j = i + 1;
+            while (j < features.len and std.ascii.isLower(features[j])) : (j += 1) {}
+            const code = features[i..j];
+
+            while (j < features.len and std.ascii.isDigit(features[j])) : (j += 1) {}
+            if (std.mem.eql(u8, code, needle)) return true;
+
+            i = j;
+        }
+
+        return false;
+    }
+
+    fn indexOfOscTerminator(bytes: []const u8, start: usize) ?usize {
+        var i = start;
+        while (i < bytes.len) : (i += 1) {
+            if (bytes[i] == 0x07) return i;
+            if (bytes[i] == 0x1b and i + 1 < bytes.len and bytes[i + 1] == '\\') {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    fn indexOfSt(bytes: []const u8, start: usize) ?usize {
+        var i = start;
+        while (i + 1 < bytes.len) : (i += 1) {
+            if (bytes[i] == 0x1b and bytes[i + 1] == '\\') return i;
+        }
+        return null;
+    }
+
     fn isKnownUnicodeWidthTerminal() bool {
         // Terminals known to use grapheme-aware width by default.
         return envVarEquals("TERM_PROGRAM", "WezTerm") or
@@ -576,6 +1034,42 @@ pub const Terminal = struct {
 
     fn looksLikeKittyTerminal() bool {
         return envVarExists("KITTY_WINDOW_ID") or envVarContains("TERM", "kitty");
+    }
+
+    fn looksLikeIterm2Terminal() bool {
+        return envVarEquals("TERM_PROGRAM", "iTerm.app") or
+            envVarEquals("LC_TERMINAL", "iTerm2");
+    }
+
+    fn looksLikeSixelTerminal() bool {
+        return envVarContains("TERM", "sixel") or
+            envVarContains("TERM", "mlterm") or
+            envVarContains("TERM", "yaft") or
+            envVarContains("TERM", "contour");
+    }
+
+    fn isLikelyFullSixelSequence(bytes: []const u8) bool {
+        if (bytes.len == 0) return false;
+        return std.mem.startsWith(u8, bytes, ansi.DCS) or bytes[0] == 0x90;
+    }
+
+    fn isSixelDataPath(path: []const u8) bool {
+        return std.mem.endsWith(u8, path, ".sixel") or
+            std.mem.endsWith(u8, path, ".SIXEL") or
+            std.mem.endsWith(u8, path, ".six") or
+            std.mem.endsWith(u8, path, ".SIX");
+    }
+
+    fn commandExists(name: []const u8) bool {
+        const argv = [_][]const u8{ name, "--version" };
+        const result = std.process.Child.run(.{
+            .allocator = std.heap.page_allocator,
+            .argv = &argv,
+            .max_output_bytes = 1024,
+        }) catch return false;
+        defer std.heap.page_allocator.free(result.stdout);
+        defer std.heap.page_allocator.free(result.stderr);
+        return true;
     }
 
     fn envVarExists(name: []const u8) bool {

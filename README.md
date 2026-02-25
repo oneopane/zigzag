@@ -11,7 +11,7 @@ A delightful TUI framework for Zig, inspired by [Bubble Tea](https://github.com/
 - **16 Pre-built Components** - TextInput (with autocomplete/word movement), TextArea, List (fuzzy filtering), Table (interactive with row selection), Viewport, Progress (color gradients), Spinner, Tree, StyledList, Sparkline, Notification/Toast, Confirm dialog, Help, Paginator, Timer, FilePicker
 - **Keybinding Management** - Structured `KeyBinding`/`KeyMap` with matching, display formatting, and Help component integration
 - **Color System** - ANSI 16, 256, and TrueColor with adaptive colors, color profile detection, and dark background detection
-- **Command System** - Quit, tick, repeating tick (`every`), batch, sequence, suspend/resume, runtime terminal control (mouse, cursor, alt screen, title), print above program, Kitty image file rendering
+- **Command System** - Quit, tick, repeating tick (`every`), batch, sequence, suspend/resume, runtime terminal control (mouse, cursor, alt screen, title), print above program, Kitty/iTerm2/Sixel image file rendering
 - **Custom I/O** - Pipe-friendly with configurable input/output streams for testing and automation
 - **Kitty Keyboard Protocol** - Modern keyboard handling with key release events and unambiguous key identification
 - **Bracketed Paste** - Paste events delivered as a single message instead of individual keystrokes
@@ -123,10 +123,15 @@ return .show_cursor;                   // Show terminal cursor
 return .hide_cursor;                   // Hide terminal cursor
 return .{ .set_title = "My App" };     // Set terminal window title
 return .{ .println = "Log message" };  // Print above the program output
-return .{ .kitty_image_file = .{       // Draw PNG file via Kitty graphics protocol
-    .path = "/tmp/cat.png",
+return .{ .image_file = .{             // Draw image via Kitty/iTerm2/Sixel when available
+    .path = "assets/cat.png",
     .width_cells = 40,
     .height_cells = 20,
+    .placement = .center,              // .cursor, .top_left, .top_center, .center
+    .row_offset = -6,                  // Negative = higher, positive = lower
+    .col_offset = 0,                   // Negative = left, positive = right
+    // .row = 2, .col = 10,            // Optional absolute position override
+    .move_cursor = false,              // Helpful for iTerm2 placement
 } };
 ```
 
@@ -520,18 +525,40 @@ pub const Msg = union(enum) {
 };
 ```
 
-### Images (Kitty Graphics)
+### Images (Kitty + iTerm2 + Sixel)
 
-Kitty image commands are automatically no-ops on unsupported terminals.
+Image commands are automatically no-ops on unsupported terminals.
 
 ```zig
-if (ctx.supportsKittyGraphics()) {
-    _ = try ctx.drawKittyImageFromFile("/tmp/cat.png", .{
+if (ctx.supportsImages()) {
+    _ = try ctx.drawImageFromFile("assets/cat.png", .{
         .width_cells = 40,
         .height_cells = 20,
     });
 }
 ```
+
+Detection combines runtime protocol probes with terminal feature/env hints:
+- Kitty graphics: Kitty query command (`a=q`) for confirmation.
+- iTerm2 inline images: `OSC 1337;Capabilities`/`TERM_FEATURES` when available.
+- Sixel: iTerm/WezTerm `TERM_FEATURES` (`Sx`) and primary device attributes (`CSI c`, param `4`).
+
+Common terminals supported by default:
+- Kitty and Ghostty via Kitty graphics protocol.
+- iTerm2 and WezTerm via `OSC 1337` inline images.
+- Sixel-capable terminals (for example xterm with Sixel, mlterm, contour).
+
+For iTerm2, `alt_screen = false` is optional. Keep `alt_screen = true` (default)
+if you want behavior consistent with other ZigZag examples.
+
+Inside multiplexers (tmux/screen/zellij), inline image passthrough depends on
+multiplexer configuration and terminal support.
+
+For Sixel terminals, provide either:
+- a `.sixel`/`.six` file, or
+- a regular image with `img2sixel` available in `PATH`.
+
+For iTerm2, large images are sent with multipart OSC 1337 sequences automatically.
 
 ## Layout
 

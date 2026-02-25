@@ -242,3 +242,12 @@ pub fn kittyGraphics(writer: anytype, params: []const u8, payload: []const u8) !
     try writer.writeAll(payload);
     try writer.writeAll(ST);
 }
+
+/// iTerm2 inline image command (OSC 1337;File=...:... BEL)
+pub fn iterm2InlineImage(writer: anytype, params: []const u8, payload: []const u8) !void {
+    try writer.writeAll(OSC ++ "1337;File=");
+    try writer.writeAll(params);
+    try writer.writeAll(":");
+    try writer.writeAll(payload);
+    try writer.writeAll("\x07");
+}

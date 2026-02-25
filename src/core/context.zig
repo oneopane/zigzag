@@ -141,11 +141,53 @@ pub const Context = struct {
         return false;
     }
 
+    /// Returns whether iTerm2 inline images are available.
+    pub fn supportsIterm2InlineImages(self: *const Context) bool {
+        if (self._terminal) |term| {
+            return term.supportsIterm2InlineImages();
+        }
+        return false;
+    }
+
+    /// Returns whether Sixel graphics are available.
+    pub fn supportsSixel(self: *const Context) bool {
+        if (self._terminal) |term| {
+            return term.supportsSixel();
+        }
+        return false;
+    }
+
+    /// Returns whether any inline image protocol is available.
+    pub fn supportsImages(self: *const Context) bool {
+        if (self._terminal) |term| {
+            return term.supportsImages();
+        }
+        return false;
+    }
+
     /// Draw a PNG image file via Kitty graphics protocol (`t=f`).
     /// Returns false when unsupported or path is empty.
     pub fn drawKittyImageFromFile(self: *Context, path: []const u8, options: Terminal.KittyImageFileOptions) !bool {
         if (self._terminal) |term| {
             return term.drawKittyImageFromFile(path, options);
+        }
+        return false;
+    }
+
+    /// Draw a Sixel image from file (or convert via `img2sixel` when available).
+    /// Returns false when unsupported or path is empty.
+    pub fn drawSixelFromFile(self: *Context, path: []const u8, options: Terminal.SixelImageFileOptions) !bool {
+        if (self._terminal) |term| {
+            return term.drawSixelFromFile(path, options);
+        }
+        return false;
+    }
+
+    /// Draw an image file using the best available protocol.
+    /// Returns false when unsupported or path is empty.
+    pub fn drawImageFromFile(self: *Context, path: []const u8, options: Terminal.ImageFileOptions) !bool {
+        if (self._terminal) |term| {
+            return term.drawImageFromFile(path, options);
         }
         return false;
     }

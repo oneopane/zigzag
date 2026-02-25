@@ -16,6 +16,11 @@ const unicode = @import("../unicode.zig");
 pub const Cmd = command.Cmd;
 pub const Msg = message;
 
+const PendingImage = union(enum) {
+    auto: command.ImageFile,
+    kitty: command.KittyImageFile,
+};
+
 /// Program runtime that manages the application lifecycle
 pub fn Program(comptime Model: type) type {
     // Ensure Model has required declarations
@@ -53,6 +58,7 @@ pub fn Program(comptime Model: type) type {
         last_every_tick: u64,
         last_view_hash: u64,
         last_line_count: usize,
+        pending_image: ?PendingImage,
         logger: ?Logger,
 
         /// Message filter function
@@ -88,6 +94,7 @@ pub fn Program(comptime Model: type) type {
                 .last_every_tick = 0,
                 .last_view_hash = 0,
                 .last_line_count = 0,
+                .pending_image = null,
                 .logger = null,
                 .filter = null,
             };
@@ -290,6 +297,7 @@ pub fn Program(comptime Model: type) type {
 
             // Render
             try self.render();
+            try self.flushPendingImage();
         }
 
         /// Dispatch a message to the model, applying the filter if set
@@ -496,8 +504,43 @@ pub fn Program(comptime Model: type) type {
                         try term.flush();
                     }
                 },
+                .image_file => |image| {
+                    self.pending_image = .{ .auto = image };
+                },
                 .kitty_image_file => |image| {
-                    if (self.terminal) |*term| {
+                    self.pending_image = .{ .kitty = image };
+                },
+            }
+        }
+
+        fn flushPendingImage(self: *Self) !void {
+            const pending = self.pending_image orelse return;
+            self.pending_image = null;
+            if (self.terminal) |*term| {
+                switch (pending) {
+                    .auto => |image| {
+                        if (!image.move_cursor) {
+                            try term.writer().writeAll(ansi.cursor_save);
+                        }
+                        try self.positionPendingImage(term, image);
+                        _ = try term.drawImageFromFile(image.path, .{
+                            .width_cells = image.width_cells,
+                            .height_cells = image.height_cells,
+                            .preserve_aspect_ratio = image.preserve_aspect_ratio,
+                            .image_id = image.image_id,
+                            .placement_id = image.placement_id,
+                            .move_cursor = image.move_cursor,
+                            .quiet = image.quiet,
+                        });
+                        if (!image.move_cursor) {
+                            try term.writer().writeAll(ansi.cursor_restore);
+                        }
+                    },
+                    .kitty => |image| {
+                        if (!image.move_cursor) {
+                            try term.writer().writeAll(ansi.cursor_save);
+                        }
+                        try self.positionPendingImage(term, image);
                         _ = try term.drawKittyImageFromFile(image.path, .{
                             .width_cells = image.width_cells,
                             .height_cells = image.height_cells,
@@ -506,10 +549,73 @@ pub fn Program(comptime Model: type) type {
                             .move_cursor = image.move_cursor,
                             .quiet = image.quiet,
                         });
-                        try term.flush();
+                        if (!image.move_cursor) {
+                            try term.writer().writeAll(ansi.cursor_restore);
+                        }
+                    },
+                }
+                try term.flush();
+            }
+        }
+
+        fn positionPendingImage(self: *Self, term: *Terminal, image: command.ImageFile) !void {
+            var row: u16 = 0;
+            var col: u16 = 0;
+
+            switch (image.placement) {
+                .cursor => return,
+                .top_left => {
+                    row = 0;
+                    col = 0;
+                },
+                .top_center => {
+                    if (image.width_cells) |w_cells| {
+                        const term_width = @as(usize, self.context.width);
+                        const image_width = @as(usize, w_cells);
+                        if (term_width > image_width) {
+                            col = @intCast((term_width - image_width) / 2);
+                        }
+                    }
+                    row = 0;
+                },
+                .center => {
+                    if (image.width_cells) |w_cells| {
+                        const term_width = @as(usize, self.context.width);
+                        const image_width = @as(usize, w_cells);
+                        if (term_width > image_width) {
+                            col = @intCast((term_width - image_width) / 2);
+                        }
+                    }
+
+                    if (image.height_cells) |h_cells| {
+                        const term_height = @as(usize, self.context.height);
+                        const image_height = @as(usize, h_cells);
+                        if (term_height > image_height) {
+                            row = @intCast((term_height - image_height) / 2);
+                        }
                     }
                 },
             }
+
+            if (image.row) |r| row = r;
+            if (image.col) |c| col = c;
+
+            const max_row = if (image.height_cells) |h| self.context.height -| h else self.context.height -| 1;
+            const max_col = if (image.width_cells) |w| self.context.width -| w else self.context.width -| 1;
+            row = applySignedOffsetClamped(row, image.row_offset, max_row);
+            col = applySignedOffsetClamped(col, image.col_offset, max_col);
+
+            try term.moveTo(row, col);
+        }
+
+        fn applySignedOffsetClamped(base: u16, offset: i16, max: u16) u16 {
+            const base_i32 = @as(i32, @intCast(base));
+            const offset_i32 = @as(i32, offset);
+            const max_i32 = @as(i32, @intCast(max));
+            var value = base_i32 + offset_i32;
+            if (value < 0) value = 0;
+            if (value > max_i32) value = max_i32;
+            return @intCast(value);
         }
 
         fn sleepNs(nanoseconds: u64) void {

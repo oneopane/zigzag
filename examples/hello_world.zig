@@ -5,27 +5,40 @@ const std = @import("std");
 const zz = @import("zigzag");
 
 const Model = struct {
-    kitty_supported: bool,
+    image_supported: bool,
+    image_visible: bool,
     image_attempted: bool,
+    image_size_cells: u16,
     image_path: []const u8,
+
+    const image_gap_lines: u16 = 1;
+
+    const ImageLayout = struct {
+        size_cells: u16,
+        row: u16,
+        col: u16,
+    };
 
     /// The message type for this model
     pub const Msg = union(enum) {
         key: zz.KeyEvent,
+        window_size: zz.msg.WindowSize,
     };
 
     /// Initialize the model
     pub fn init(self: *Model, ctx: *zz.Context) zz.Cmd(Msg) {
         self.* = .{
-            .kitty_supported = ctx.supportsKittyGraphics(),
+            .image_supported = ctx.supportsImages(),
+            .image_visible = false,
             .image_attempted = false,
-            .image_path = "/tmp/cat.png",
+            .image_size_cells = 0,
+            .image_path = "assets/cat.png",
         };
         return .none;
     }
 
     /// Handle messages and update state
-    pub fn update(self: *Model, msg: Msg, _: *zz.Context) zz.Cmd(Msg) {
+    pub fn update(self: *Model, msg: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
         switch (msg) {
             .key => |k| {
                 // Quit on 'q' or Escape
@@ -34,12 +47,9 @@ const Model = struct {
                         'q' => return .quit,
                         'i' => {
                             self.image_attempted = true;
-                            if (self.kitty_supported) {
-                                return .{ .kitty_image_file = .{
-                                    .path = self.image_path,
-                                    .width_cells = 32,
-                                    .height_cells = 16,
-                                } };
+                            if (self.image_supported) {
+                                self.image_visible = true;
+                                return self.imageCommand(ctx);
                             }
                         },
                         else => {},
@@ -48,8 +58,60 @@ const Model = struct {
                     else => {},
                 }
             },
+            .window_size => {
+                if (self.image_supported and self.image_visible) {
+                    return self.imageCommand(ctx);
+                }
+            },
         }
         return .none;
+    }
+
+    fn imageCommand(self: *Model, ctx: *const zz.Context) zz.Cmd(Msg) {
+        const layout = self.computeImageLayout(ctx);
+        return .{ .image_file = .{
+            .path = self.image_path,
+            .width_cells = layout.size_cells,
+            .height_cells = layout.size_cells,
+            .placement = .top_left,
+            .row = layout.row,
+            .col = layout.col,
+            .move_cursor = false,
+        } };
+    }
+
+    fn pickImageSize(_: *const Model, ctx: *const zz.Context) u16 {
+        return @max(
+            @as(u16, 6),
+            @min(@as(u16, 16), @min(ctx.width -| 2, ctx.height -| 2)),
+        );
+    }
+
+    fn textBlockLineCount(_: *const Model) u16 {
+        // title + blank + subtitle + blank + hint + image-hint + status
+        return 7;
+    }
+
+    fn computeImageLayout(self: *Model, ctx: *const zz.Context) ImageLayout {
+        const size_cells = self.pickImageSize(ctx);
+        self.image_size_cells = size_cells;
+
+        const text_lines = self.textBlockLineCount();
+        const slot_height = size_cells +| image_gap_lines;
+        const container_height = text_lines +| slot_height;
+        const container_top: u16 = if (ctx.height > container_height)
+            (ctx.height - container_height) / 2
+        else
+            0;
+
+        const row = @min(container_top +| text_lines +| image_gap_lines, ctx.height -| 1);
+        const col: u16 = if (ctx.width > size_cells) (ctx.width - size_cells) / 2 else 0;
+
+        return .{
+            .size_cells = size_cells,
+            .row = row,
+            .col = @min(col, ctx.width -| 1),
+        };
     }
 
     /// Render the view
@@ -76,16 +138,16 @@ const Model = struct {
         const subtitle = subtitle_style.render(ctx.allocator, "A TUI library for Zig") catch "";
         const hint = hint_style.render(ctx.allocator, "Press 'q' to quit") catch "";
 
-        const image_hint_text = if (self.kitty_supported)
-            "Press 'i' to draw /tmp/cat.png via Kitty graphics"
+        const image_hint_text = if (self.image_supported)
+            "Press 'i' to draw assets/cat.png in remaining lower space"
         else
-            "Kitty graphics not detected in this terminal";
+            "Inline image protocol not detected in this terminal";
         const image_hint = image_hint_style.render(ctx.allocator, image_hint_text) catch image_hint_text;
 
-        const status_text = if (self.image_attempted and self.kitty_supported)
-            "Image command sent (check /tmp/cat.png path)"
-        else if (self.image_attempted and !self.kitty_supported)
-            "Image skipped: Kitty graphics unsupported"
+        const status_text = if (self.image_attempted and self.image_supported)
+            "Image command sent (check assets/cat.png path)"
+        else if (self.image_attempted and !self.image_supported)
+            "Image skipped: unsupported terminal protocol"
         else
             "";
         const status = hint_style.render(ctx.allocator, status_text) catch status_text;
@@ -117,7 +179,45 @@ const Model = struct {
             .{ centered_title, centered_subtitle, centered_hint, centered_image_hint, centered_status },
         ) catch "Error rendering view";
 
-        // Center in terminal
+        if (self.image_supported and self.image_visible) {
+            const image_size = if (self.image_size_cells > 0) self.image_size_cells else self.pickImageSize(ctx);
+            const slot_height = @as(usize, image_size) + image_gap_lines;
+            const container_width = @max(max_width, @as(usize, image_size));
+            const text_height = zz.measure.height(content);
+
+            const centered_text = zz.place.place(
+                ctx.allocator,
+                container_width,
+                text_height,
+                .center,
+                .top,
+                content,
+            ) catch content;
+
+            const image_slot = zz.place.place(
+                ctx.allocator,
+                container_width,
+                slot_height,
+                .left,
+                .top,
+                "",
+            ) catch "";
+
+            const container = zz.joinVertical(
+                ctx.allocator,
+                &.{ centered_text, image_slot },
+            ) catch centered_text;
+
+            return zz.place.place(
+                ctx.allocator,
+                ctx.width,
+                ctx.height,
+                .center,
+                .middle,
+                container,
+            ) catch container;
+        }
+
         return zz.place.place(
             ctx.allocator,
             ctx.width,
