@@ -505,12 +505,37 @@ const Model = struct {
 Any component with `focused: bool`, `focus()`, and `blur()` methods works with `FocusGroup`.
 Built-in focusable components: TextInput, TextArea, Table, List, Confirm, FilePicker.
 
-Additional API:
+#### Custom navigation keys
+
+By default Tab moves forward and Shift+Tab moves backward. Add or replace bindings freely:
+
+```zig
+// Add arrow keys and vim j/k alongside the default Tab
+fg.addNextKey(.{ .key = .down });              // Down arrow
+fg.addNextKey(.{ .key = .{ .char = 'j' } });  // vim j
+fg.addPrevKey(.{ .key = .up });                // Up arrow
+fg.addPrevKey(.{ .key = .{ .char = 'k' } });  // vim k
+
+// Or replace defaults entirely
+fg.setNextKey(.{ .key = .down });  // Down only, Tab no longer works
+fg.setPrevKey(.{ .key = .up });    // Up only
+
+// Clear all bindings (manual-only via focusNext/focusPrev)
+fg.clearNextKeys();
+fg.clearPrevKeys();
+
+// Modifier keys work too
+fg.addNextKey(.{ .key = .{ .char = 'n' }, .modifiers = .{ .ctrl = true } }); // Ctrl+N
+```
+
+Up to 4 bindings per direction. Modifier matching is exact (Ctrl+Tab won't match a plain Tab binding).
+
+#### Additional API
 
 ```zig
 fg.focusAt(2);           // Focus specific index
-fg.focusNext();          // Manual next (same as Tab)
-fg.focusPrev();          // Manual prev (same as Shift+Tab)
+fg.focusNext();          // Manual next
+fg.focusPrev();          // Manual prev
 fg.blurAll();            // Remove focus from all
 fg.focused();            // Get current index
 fg.isFocused(1);         // Check if index is focused

@@ -23,11 +23,45 @@ pub fn isFocusable(comptime T: type) bool {
         @hasDecl(T, "blur");
 }
 
-/// A group of focusable components with Tab/Shift+Tab cycling.
+/// Maximum number of key bindings per action (next / prev).
+const max_binds = 4;
+
+/// A key binding slot: a key plus optional modifiers.
+pub const KeyBind = struct {
+    key: keys.Key,
+    modifiers: keys.Modifiers = .{},
+
+    /// Check if a KeyEvent matches this binding.
+    pub fn matches(self: KeyBind, event: keys.KeyEvent) bool {
+        return self.key.eql(event.key) and self.modifiers.eql(event.modifiers);
+    }
+};
+
+/// Default "next" bindings: Tab (no modifiers), Down arrow, 'j'.
+pub const default_next_keys = [max_binds]?KeyBind{
+    .{ .key = .tab },
+    null,
+    null,
+    null,
+};
+
+/// Default "prev" bindings: Shift+Tab, Up arrow, 'k'.
+pub const default_prev_keys = [max_binds]?KeyBind{
+    .{ .key = .tab, .modifiers = .{ .shift = true } },
+    null,
+    null,
+    null,
+};
+
+/// A group of focusable components with customizable key-driven cycling.
 ///
 /// `max_items` is the maximum number of components that can be registered.
 /// The group uses a fixed-size array so it requires no allocation and can
 /// be embedded directly in a Model struct.
+///
+/// By default, Tab moves forward and Shift+Tab moves backward.
+/// Override `next_keys` / `prev_keys` or call `addNextKey()` / `addPrevKey()`
+/// to use any keys you want (arrows, vim j/k, etc.).
 ///
 /// Usage:
 /// ```
@@ -36,6 +70,12 @@ pub fn isFocusable(comptime T: type) bool {
 /// fg.add(&self.input_b);
 /// fg.add(&self.table);
 /// fg.initFocus(); // focus first, blur the rest
+///
+/// // Optional: add extra navigation keys
+/// fg.addNextKey(.{ .key = .down });          // Down arrow
+/// fg.addNextKey(.{ .key = .{ .char = 'j' } }); // vim j
+/// fg.addPrevKey(.{ .key = .up });            // Up arrow
+/// fg.addPrevKey(.{ .key = .{ .char = 'k' } }); // vim k
 /// ```
 pub fn FocusGroup(comptime max_items: usize) type {
     return struct {
@@ -54,6 +94,10 @@ pub fn FocusGroup(comptime max_items: usize) type {
         active: usize = 0,
         /// Whether cycling wraps from last to first (and vice versa).
         wrap: bool = true,
+        /// Key bindings that trigger focusNext(). Up to 4 bindings.
+        next_keys: [max_binds]?KeyBind = default_next_keys,
+        /// Key bindings that trigger focusPrev(). Up to 4 bindings.
+        prev_keys: [max_binds]?KeyBind = default_prev_keys,
 
         /// Register a focusable component.
         ///
@@ -143,18 +187,71 @@ pub fn FocusGroup(comptime max_items: usize) type {
 
         /// Handle a key event for focus cycling.
         ///
-        /// Returns `true` if the key was consumed (Tab or Shift+Tab),
+        /// Checks the event against `next_keys` and `prev_keys`.
+        /// Returns `true` if the key was consumed (matched a binding),
         /// `false` if it should be forwarded to the active component.
         pub fn handleKey(self: *Self, key: keys.KeyEvent) bool {
-            if (key.key == .tab) {
-                if (key.modifiers.shift) {
-                    self.focusPrev();
-                } else {
-                    self.focusNext();
+            for (self.next_keys) |maybe_bind| {
+                if (maybe_bind) |bind| {
+                    if (bind.matches(key)) {
+                        self.focusNext();
+                        return true;
+                    }
                 }
-                return true;
+            }
+            for (self.prev_keys) |maybe_bind| {
+                if (maybe_bind) |bind| {
+                    if (bind.matches(key)) {
+                        self.focusPrev();
+                        return true;
+                    }
+                }
             }
             return false;
+        }
+
+        /// Add an extra key binding for "focus next".
+        /// Returns false if all 4 slots are full.
+        pub fn addNextKey(self: *Self, bind: KeyBind) bool {
+            for (&self.next_keys) |*slot| {
+                if (slot.* == null) {
+                    slot.* = bind;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// Add an extra key binding for "focus prev".
+        /// Returns false if all 4 slots are full.
+        pub fn addPrevKey(self: *Self, bind: KeyBind) bool {
+            for (&self.prev_keys) |*slot| {
+                if (slot.* == null) {
+                    slot.* = bind;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// Replace all "next" bindings with a single key.
+        pub fn setNextKey(self: *Self, bind: KeyBind) void {
+            self.next_keys = .{ bind, null, null, null };
+        }
+
+        /// Replace all "prev" bindings with a single key.
+        pub fn setPrevKey(self: *Self, bind: KeyBind) void {
+            self.prev_keys = .{ bind, null, null, null };
+        }
+
+        /// Clear all "next" key bindings.
+        pub fn clearNextKeys(self: *Self) void {
+            self.next_keys = .{ null, null, null, null };
+        }
+
+        /// Clear all "prev" key bindings.
+        pub fn clearPrevKeys(self: *Self) void {
+            self.prev_keys = .{ null, null, null, null };
         }
 
         /// Get the index of the currently focused item.

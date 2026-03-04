@@ -134,6 +134,7 @@ pub const Confirm = components.Confirm;
 // Focus management
 pub const FocusGroup = components.focus.FocusGroup;
 pub const FocusStyle = components.focus.FocusStyle;
+pub const KeyBind = components.focus.KeyBind;
 pub const isFocusable = components.focus.isFocusable;
 
 // Keybinding management
