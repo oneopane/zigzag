@@ -640,6 +640,13 @@ var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
     .cursor = false,            // Show cursor
     .bracketed_paste = true,    // Enable bracketed paste mode
     .kitty_keyboard = false,    // Enable Kitty keyboard protocol
+    .osc52 = .{                 // OSC 52 clipboard defaults
+        .enabled = true,
+        .target = .clipboard,   // .primary, .secondary, .select, .cut_buffer, .raw
+        .terminator = .bel,     // .bel or .st
+        .passthrough = .auto,   // .auto, .none, .tmux, .dcs
+        .max_bytes = null,      // Optional payload limit
+    },
     .unicode_width_strategy = null, // null=auto, .legacy_wcwidth, .unicode
     .suspend_enabled = true,    // Enable Ctrl+Z suspend/resume
     .title = "My App",         // Window title
@@ -713,6 +720,39 @@ pub const Msg = union(enum) {
     paste: []const u8,  // Receives full pasted text
 };
 ```
+
+### OSC 52 Clipboard (Output)
+
+Copy text/bytes to the system clipboard from your app:
+
+```zig
+// Uses Program option defaults (.osc52)
+_ = try ctx.setClipboard("Copied from ZigZag");
+```
+
+Per-call overrides for edge cases:
+
+```zig
+_ = try ctx.setClipboardWithOptions("Primary selection", .{
+    .target = .primary,
+    .terminator = .st,
+    .passthrough = .tmux,
+    .max_bytes = 64 * 1024,
+});
+```
+
+Advanced/extension example (non-standard selector string):
+
+```zig
+_ = try ctx.setClipboardWithOptions("Custom selector", .{
+    .target = .{ .raw = "c" },
+});
+```
+
+Notes:
+- Returns `false` when disabled (`.osc52.enabled = false`), blocked by guardrails (TTY/size), or unavailable in current output mode.
+- `.passthrough = .auto` detects tmux/screen-like environments and wraps OSC 52 in DCS passthrough when needed.
+- Terminals differ in security policy and maximum accepted sequence length. Use `.max_bytes` to enforce an app-side ceiling if desired.
 
 ### Suspend/Resume
 
@@ -930,6 +970,7 @@ zig build run-dashboard
 zig build run-showcase       # Multi-tab demo of all features
 zig build run-focus_form     # Focus management with Tab cycling
 zig build run-tabs           # TabGroup multi-screen routing
+zig build run-clipboard_osc52 # OSC 52 clipboard output demo
 ```
 
 ## Building

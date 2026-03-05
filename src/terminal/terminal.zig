@@ -156,6 +156,65 @@ pub const SixelImageFileOptions = struct {
     height_pixels: ?u32 = null,
 };
 
+/// OSC 52 clipboard target selector.
+/// Standard values are `c`, `p`, `q`, `s`, or cut buffers `0`..`7`.
+pub const Osc52Target = union(enum) {
+    clipboard,
+    primary,
+    secondary,
+    select,
+    cut_buffer: u3,
+    raw: []const u8,
+
+    fn encode(self: Osc52Target, scratch: *[1]u8) []const u8 {
+        return switch (self) {
+            .clipboard => "c",
+            .primary => "p",
+            .secondary => "q",
+            .select => "s",
+            .cut_buffer => |n| blk: {
+                scratch[0] = @as(u8, '0') + @as(u8, n);
+                break :blk scratch[0..1];
+            },
+            .raw => |value| value,
+        };
+    }
+};
+
+/// OSC 52 passthrough strategy.
+/// `tmux` and `dcs` wrap OSC inside DCS passthrough for multiplexers.
+pub const Osc52Passthrough = enum {
+    auto,
+    none,
+    tmux,
+    dcs,
+};
+
+/// Default OSC 52 behavior for this terminal instance.
+pub const Osc52Config = struct {
+    /// Master switch for clipboard writes.
+    enabled: bool = true,
+    /// Require a TTY before sending OSC 52.
+    require_tty: bool = true,
+    /// Default target selection.
+    target: Osc52Target = .clipboard,
+    /// Sequence terminator (BEL is widely compatible).
+    terminator: ansi.OscTerminator = .bel,
+    /// Passthrough mode (`auto` detects tmux/screen-like environments).
+    passthrough: Osc52Passthrough = .auto,
+    /// Optional input payload limit (bytes). `null` = no library limit.
+    max_bytes: ?usize = null,
+};
+
+/// Per-call OSC 52 overrides.
+pub const Osc52WriteOptions = struct {
+    target: ?Osc52Target = null,
+    terminator: ?ansi.OscTerminator = null,
+    passthrough: ?Osc52Passthrough = null,
+    require_tty: ?bool = null,
+    max_bytes: ?usize = null,
+};
+
 /// Terminal configuration options
 pub const Config = struct {
     /// Use alternate screen buffer
@@ -172,6 +231,8 @@ pub const Config = struct {
     output: ?std.fs.File = null,
     /// Enable Kitty keyboard protocol
     kitty_keyboard: bool = false,
+    /// OSC 52 clipboard configuration
+    osc52: Osc52Config = .{},
 };
 
 /// Terminal abstraction
@@ -388,6 +449,37 @@ pub const Terminal = struct {
         try self.writeBytes("\x1b]0;");
         try self.writeBytes(title);
         try self.writeBytes("\x07");
+    }
+
+    /// Copy bytes to the system clipboard using OSC 52 with instance defaults.
+    /// Returns `false` when disabled by config, rejected by local guardrails, or not suitable for this output.
+    pub fn setClipboard(self: *Terminal, bytes: []const u8) !bool {
+        return self.setClipboardWithOptions(bytes, .{});
+    }
+
+    /// Copy bytes to the system clipboard using OSC 52 with per-call overrides.
+    pub fn setClipboardWithOptions(self: *Terminal, bytes: []const u8, options: Osc52WriteOptions) !bool {
+        if (!self.config.osc52.enabled) return false;
+
+        const require_tty = options.require_tty orelse self.config.osc52.require_tty;
+        if (require_tty and !self.isTty()) return false;
+
+        const max_bytes = options.max_bytes orelse self.config.osc52.max_bytes;
+        if (max_bytes) |limit| {
+            if (bytes.len > limit) return false;
+        }
+
+        const terminator = options.terminator orelse self.config.osc52.terminator;
+        const passthrough_mode = options.passthrough orelse self.config.osc52.passthrough;
+        const passthrough = self.resolveOsc52Passthrough(passthrough_mode);
+
+        var target_scratch: [1]u8 = undefined;
+        const target = (options.target orelse self.config.osc52.target).encode(&target_scratch);
+
+        try ansi.osc52Start(self.writer(), target, passthrough);
+        try self.writeBase64(bytes);
+        try ansi.osc52End(self.writer(), terminator, passthrough);
+        return true;
     }
 
     /// Write a string at position
@@ -888,6 +980,36 @@ pub const Terminal = struct {
             .iterm2_inline_image = iterm,
             .sixel = sixel,
         };
+    }
+
+    fn resolveOsc52Passthrough(self: *const Terminal, mode: Osc52Passthrough) ansi.Osc52Passthrough {
+        _ = self;
+        return switch (mode) {
+            .none => .none,
+            .tmux => .tmux,
+            .dcs => .dcs,
+            .auto => blk: {
+                if (envVarExists("TMUX")) break :blk .tmux;
+                if (envVarContains("TERM", "screen")) break :blk .dcs;
+                break :blk .none;
+            },
+        };
+    }
+
+    fn writeBase64(self: *Terminal, bytes: []const u8) !void {
+        const encoder = std.base64.standard.Encoder;
+        var b64_buf: [4096]u8 = undefined;
+        const raw_chunk_max: usize = (b64_buf.len / 4) * 3;
+
+        var src_index: usize = 0;
+        while (src_index < bytes.len) {
+            const take = @min(bytes.len - src_index, raw_chunk_max);
+            const chunk = bytes[src_index .. src_index + take];
+            const encoded_len = encoder.calcSize(chunk.len);
+            const encoded = encoder.encode(b64_buf[0..encoded_len], chunk);
+            try self.writeBytes(encoded);
+            src_index += take;
+        }
     }
 
     fn sendKittyGraphicsPayload(self: *Terminal, first_params: []const u8, payload: []const u8) !void {
