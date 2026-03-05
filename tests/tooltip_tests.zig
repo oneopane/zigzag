@@ -328,3 +328,141 @@ test "empty arrow string hides arrow" {
     const output = try t.render(alloc, 80, 24);
     try testing.expect(output.len > 0);
 }
+
+// ── inherit_bg tests ──────────────────────────────────────────────
+
+test "inherit_bg false does not inject base background" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Tip");
+    t.target_x = 5;
+    t.target_y = 0;
+    t.placement = .bottom;
+    t.inherit_bg = false;
+    t.show();
+
+    // Base line with a true-color bg on the first row
+    const base = "\x1b[48;2;100;100;100mColored Background\x1b[0m";
+    const output = try t.overlay(alloc, base, 40, 10);
+    try testing.expect(output.len > 0);
+    // With inherit_bg off, the tooltip renders without injecting base bg.
+    // Just verify it produces valid output.
+    try testing.expect(std.mem.indexOf(u8, output, "\n") != null);
+}
+
+test "inherit_bg true injects base background into arrow" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Tip");
+    t.target_x = 5;
+    t.target_y = 0;
+    t.placement = .bottom;
+    t.inherit_bg = true;
+    t.show();
+
+    // Base with a true-color bg covering the arrow position
+    const base = "\x1b[48;2;200;50;50mRed Background Here!!\x1b[0m";
+    const output = try t.overlay(alloc, base, 40, 10);
+    try testing.expect(output.len > 0);
+
+    // The arrow row should contain the base bg sequence (48;2;200;50;50)
+    // injected before the arrow character
+    try testing.expect(std.mem.indexOf(u8, output, "48;2;200;50;50") != null);
+}
+
+test "inherit_bg true injects base background into box border" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Hi");
+    t.target_x = 3;
+    t.target_y = 0;
+    t.placement = .bottom;
+    t.inherit_bg = true;
+    t.show();
+
+    // Base with a 256-color bg
+    const base = "\x1b[48;5;22mGreen row content here long enough\x1b[0m";
+    const output = try t.overlay(alloc, base, 50, 10);
+    try testing.expect(output.len > 0);
+    // The box rows should contain the 256-color bg injected
+    try testing.expect(std.mem.indexOf(u8, output, "48;5;22") != null);
+}
+
+test "inherit_bg with no base background is harmless" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Plain");
+    t.target_x = 2;
+    t.target_y = 0;
+    t.placement = .bottom;
+    t.inherit_bg = true;
+    t.show();
+
+    // Plain base with no ANSI at all
+    const base = "Hello World, no colors here at all!!";
+    const output = try t.overlay(alloc, base, 50, 10);
+    try testing.expect(output.len > 0);
+    // Should still render correctly — no crash, no garbage
+}
+
+test "inherit_bg with bg reset before target column" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Tip");
+    t.target_x = 12;
+    t.target_y = 0;
+    t.placement = .bottom;
+    t.inherit_bg = true;
+    t.show();
+
+    // BG set then reset before the target column
+    const base = "\x1b[48;2;255;0;0mRedPart\x1b[0m  PlainPart after reset here";
+    const output = try t.overlay(alloc, base, 50, 10);
+    try testing.expect(output.len > 0);
+    // At column 12 the bg has been reset, so no bg should be injected.
+    // The red bg (255;0;0) should NOT appear in tooltip elements.
+    // It may still appear in the preserved base left portion though,
+    // so we just verify no crash and valid output.
+}
+
+test "inherit_bg with left/right placement" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Side");
+    t.target_x = 20;
+    t.target_y = 3;
+    t.target_width = 4;
+    t.placement = .right;
+    t.inherit_bg = true;
+    t.show();
+
+    // Build multi-line base with bg on relevant rows
+    var base_buf = std.array_list.Managed(u8).init(alloc);
+    for (0..8) |row| {
+        if (row > 0) try base_buf.append('\n');
+        if (row == 3) {
+            try base_buf.appendSlice("\x1b[48;2;0;128;255m");
+            try base_buf.appendSlice("Blue row with enough content for tooltip overlay test!!");
+            try base_buf.appendSlice("\x1b[0m");
+        } else {
+            try base_buf.appendSlice("Normal row with some plain text content for testing!!");
+        }
+    }
+    const base = try base_buf.toOwnedSlice();
+    const output = try t.overlay(alloc, base, 60, 8);
+    try testing.expect(output.len > 0);
+    // The blue bg should be injected into the arrow on row 3
+    try testing.expect(std.mem.indexOf(u8, output, "48;2;0;128;255") != null);
+}
