@@ -249,3 +249,82 @@ test "empty tooltip text" {
     const box = try t.renderBox(alloc);
     try testing.expect(box.len > 0); // Still renders box frame
 }
+
+// ---------------------------------------------------------------------------
+// Arrow customization
+// ---------------------------------------------------------------------------
+
+test "custom arrow characters" {
+    var t = Tooltip.init("Custom arrows");
+    t.arrow_up = "^";
+    t.arrow_down = "v";
+    t.arrow_left = "<";
+    t.arrow_right = ">";
+    try testing.expectEqualStrings("^", t.arrow_up);
+    try testing.expectEqualStrings("v", t.arrow_down);
+}
+
+test "render with custom arrow chars" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Custom");
+    t.arrow_up = "^";
+    t.target_x = 10;
+    t.target_y = 5;
+    t.placement = .bottom;
+    t.show();
+    const output = try t.render(alloc, 80, 24);
+    try testing.expect(output.len > 0);
+    try testing.expect(std.mem.indexOf(u8, output, "^") != null);
+}
+
+test "render left/right placement shows arrow" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Right placement
+    var t = Tooltip.init("Right");
+    t.arrow_left = "<";
+    t.target_x = 10;
+    t.target_y = 12;
+    t.target_width = 4;
+    t.placement = .right;
+    t.show();
+    const output = try t.render(alloc, 80, 24);
+    try testing.expect(std.mem.indexOf(u8, output, "<") != null);
+}
+
+test "overlay left/right placement shows arrow" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("Left");
+    t.arrow_right = ">";
+    t.target_x = 40;
+    t.target_y = 5;
+    t.target_width = 4;
+    t.placement = .left;
+    t.show();
+    const base = "Some base content that is wide enough for the test overlay to work";
+    const output = try t.overlay(alloc, base, 80, 12);
+    try testing.expect(std.mem.indexOf(u8, output, ">") != null);
+}
+
+test "empty arrow string hides arrow" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var t = Tooltip.init("No arrow char");
+    t.arrow_up = "";
+    t.target_x = 10;
+    t.target_y = 5;
+    t.placement = .bottom;
+    t.show();
+    const output = try t.render(alloc, 80, 24);
+    try testing.expect(output.len > 0);
+}

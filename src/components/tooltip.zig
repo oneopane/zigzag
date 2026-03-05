@@ -76,7 +76,14 @@ pub const Tooltip = struct {
 
     /// Show an arrow pointing from tooltip toward the target.
     show_arrow: bool = true,
+    /// Color of the arrow character.
     arrow_fg: Color = Color.gray(14),
+    /// Custom arrow characters per direction (what's shown when the tooltip
+    /// is placed in that direction). Set to "" to hide a specific arrow.
+    arrow_up: []const u8 = "▲",
+    arrow_down: []const u8 = "▼",
+    arrow_left: []const u8 = "◀",
+    arrow_right: []const u8 = "▶",
 
     // ── Types ──────────────────────────────────────────────────────────
 
@@ -95,13 +102,6 @@ pub const Tooltip = struct {
         pub fn symmetric(vert: u16, horiz: u16) Padding {
             return .{ .top = vert, .right = horiz, .bottom = vert, .left = horiz };
         }
-    };
-
-    pub const Arrow = struct {
-        pub const up = "▲";
-        pub const down = "▼";
-        pub const left_arrow = "◀";
-        pub const right_arrow = "▶";
     };
 
     // ── Preset Constructors ────────────────────────────────────────────
@@ -270,19 +270,29 @@ pub const Tooltip = struct {
         var box_iter = std.mem.splitScalar(u8, box, '\n');
         while (box_iter.next()) |line| try box_lines.append(line);
 
+        const is_horizontal = self.placement == .left or self.placement == .right;
+
         for (0..term_height) |row| {
             if (row > 0) try wr.writeByte('\n');
 
-            // Check if this row is the arrow row
-            if (self.show_arrow and row == pos.arrow_y) {
-                try self.writeArrowRow(allocator, wr, pos, term_width, box_lines.items, box_w, box_h, row);
-                continue;
-            }
+            const in_box = row >= pos.box_y and row < pos.box_y + box_h;
+            const is_arrow_row = self.show_arrow and row == pos.arrow_y;
 
-            // Check if this row is in the box
-            if (row >= pos.box_y and row < pos.box_y + box_h) {
+            if (in_box) {
                 const box_line_idx = row - pos.box_y;
-                try self.writeBoxRow(allocator, wr, pos, term_width, box_lines.items, box_w, box_line_idx);
+                const box_line = if (box_line_idx < box_lines.items.len) box_lines.items[box_line_idx] else "";
+                // For left/right placement, include arrow on the same row as the box
+                if (is_arrow_row and is_horizontal) {
+                    try self.writeBoxRowWithSideArrow(allocator, wr, pos, box_line, term_width);
+                } else {
+                    try wr.writeAll(try nSpaces(allocator, pos.box_x));
+                    try wr.writeAll(box_line);
+                    const right = pos.box_x + measure.width(box_line);
+                    if (right < term_width) try wr.writeAll(try nSpaces(allocator, term_width - right));
+                }
+            } else if (is_arrow_row) {
+                // Top/bottom arrow on its own row
+                try self.writeArrowOnlyRow(allocator, wr, pos, term_width);
             } else {
                 try wr.writeAll(try nSpaces(allocator, term_width));
             }
@@ -316,28 +326,28 @@ pub const Tooltip = struct {
         var result = std.array_list.Managed(u8).init(allocator);
         const wr = result.writer();
 
+        const is_horizontal = self.placement == .left or self.placement == .right;
+
         for (0..term_height) |row| {
             if (row > 0) try wr.writeByte('\n');
 
             const base_line = if (row < base_lines.items.len) base_lines.items[row] else "";
+            const in_box = row >= pos.box_y and row < pos.box_y + box_h;
+            const is_arrow_row = self.show_arrow and row == pos.arrow_y;
 
-            // Arrow row
-            if (self.show_arrow and row == pos.arrow_y and !(row >= pos.box_y and row < pos.box_y + box_h)) {
-                // Write base left of arrow, then arrow, then base right
-                try self.writeSplicedArrowRow(allocator, wr, pos, base_line, term_width);
-                continue;
-            }
-
-            // Box row
-            if (row >= pos.box_y and row < pos.box_y + box_h) {
+            if (in_box) {
                 const box_line_idx = row - pos.box_y;
                 const box_line = if (box_line_idx < box_lines.items.len) box_lines.items[box_line_idx] else "";
-                try self.writeSplicedBoxRow(allocator, wr, pos, base_line, box_line, box_w, term_width);
-                continue;
+                if (is_arrow_row and is_horizontal) {
+                    try self.writeSplicedBoxRowWithSideArrow(allocator, wr, pos, base_line, box_line, box_w, term_width);
+                } else {
+                    try self.writeSplicedBoxRow(allocator, wr, pos, base_line, box_line, box_w, term_width);
+                }
+            } else if (is_arrow_row) {
+                try self.writeSplicedArrowRow(allocator, wr, pos, base_line, term_width);
+            } else {
+                try wr.writeAll(base_line);
             }
-
-            // Plain base line
-            try wr.writeAll(base_line);
         }
 
         return result.toOwnedSlice();
@@ -405,55 +415,72 @@ pub const Tooltip = struct {
 
     fn arrowChar(self: *const Tooltip) []const u8 {
         return switch (self.placement) {
-            .bottom => Arrow.up,
-            .top => Arrow.down,
-            .left => Arrow.right_arrow,
-            .right => Arrow.left_arrow,
+            .bottom => self.arrow_up,
+            .top => self.arrow_down,
+            .left => self.arrow_right,
+            .right => self.arrow_left,
         };
+    }
+
+    fn renderStyledArrow(self: *const Tooltip, allocator: std.mem.Allocator) ![]const u8 {
+        const ch = self.arrowChar();
+        if (ch.len == 0) return try allocator.dupe(u8, "");
+        var arrow_s = style_mod.Style{};
+        arrow_s = arrow_s.fg(self.arrow_fg).inline_style(true);
+        return try arrow_s.render(allocator, ch);
+    }
+
+    fn arrowDisplayWidth(self: *const Tooltip) usize {
+        const ch = self.arrowChar();
+        if (ch.len == 0) return 0;
+        return measure.width(ch);
     }
 
     // ── Render helpers (full-screen canvas) ────────────────────────────
 
-    fn writeArrowRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, tw: usize, box_lines: []const []const u8, box_w: usize, box_h: usize, row: usize) !void {
-        // If this row also overlaps with the box, splice both
-        if (row >= pos.box_y and row < pos.box_y + box_h) {
-            const box_line_idx = row - pos.box_y;
-            const box_line = if (box_line_idx < box_lines.len) box_lines[box_line_idx] else "";
-            // Write spaces up to box, then box line, then spaces
-            try writer.writeAll(try nSpaces(allocator, pos.box_x));
-            try writer.writeAll(box_line);
-            const right = pos.box_x + measure.width(box_line);
-            if (right < tw) try writer.writeAll(try nSpaces(allocator, tw - right));
-            return;
-        }
-
-        _ = box_w;
-
-        // Arrow only row
+    /// Arrow on its own row (top/bottom placement).
+    fn writeArrowOnlyRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, tw: usize) !void {
         try writer.writeAll(try nSpaces(allocator, pos.arrow_x));
-
-        var arrow_s = style_mod.Style{};
-        arrow_s = arrow_s.fg(self.arrow_fg).inline_style(true);
-        try writer.writeAll(try arrow_s.render(allocator, self.arrowChar()));
-
-        if (pos.arrow_x + 1 < tw) {
-            try writer.writeAll(try nSpaces(allocator, tw - pos.arrow_x - 1));
-        }
+        try writer.writeAll(try self.renderStyledArrow(allocator));
+        const aw = self.arrowDisplayWidth();
+        const used = pos.arrow_x + aw;
+        if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
     }
 
-    fn writeBoxRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, tw: usize, box_lines: []const []const u8, box_w: usize, box_line_idx: usize) !void {
-        _ = self;
-        _ = box_w;
-        const box_line = if (box_line_idx < box_lines.len) box_lines[box_line_idx] else "";
-        try writer.writeAll(try nSpaces(allocator, pos.box_x));
-        try writer.writeAll(box_line);
-        const right = pos.box_x + measure.width(box_line);
-        if (right < tw) try writer.writeAll(try nSpaces(allocator, tw - right));
+    /// Box row that also has a side arrow (left/right placement).
+    fn writeBoxRowWithSideArrow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, box_line: []const u8, tw: usize) !void {
+        const box_line_w = measure.width(box_line);
+        const aw = self.arrowDisplayWidth();
+        const styled_arrow = try self.renderStyledArrow(allocator);
+
+        if (self.placement == .right) {
+            // Layout: [spaces] [arrow] [box_line] [spaces]
+            try writer.writeAll(try nSpaces(allocator, pos.arrow_x));
+            try writer.writeAll(styled_arrow);
+            // box_x should be arrow_x + aw, but use pos.box_x
+            const gap_between = if (pos.box_x > pos.arrow_x + aw) pos.box_x - pos.arrow_x - aw else 0;
+            try writer.writeAll(try nSpaces(allocator, gap_between));
+            try writer.writeAll(box_line);
+            const used = pos.arrow_x + aw + gap_between + box_line_w;
+            if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
+        } else {
+            // .left — Layout: [spaces] [box_line] [arrow] [spaces]
+            try writer.writeAll(try nSpaces(allocator, pos.box_x));
+            try writer.writeAll(box_line);
+            const gap_between = if (pos.arrow_x > pos.box_x + box_line_w) pos.arrow_x - pos.box_x - box_line_w else 0;
+            try writer.writeAll(try nSpaces(allocator, gap_between));
+            try writer.writeAll(styled_arrow);
+            const used = pos.box_x + box_line_w + gap_between + aw;
+            if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
+        }
     }
 
     // ── Render helpers (overlay/splice) ────────────────────────────────
 
+    /// Splice arrow-only row onto base line (top/bottom placement).
     fn writeSplicedArrowRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, base_line: []const u8, tw: usize) !void {
+        const aw = self.arrowDisplayWidth();
+
         // Left part from base
         const left = try truncateToWidth(allocator, base_line, pos.arrow_x);
         try writer.writeAll(left);
@@ -461,18 +488,17 @@ pub const Tooltip = struct {
         if (left_w < pos.arrow_x) try writer.writeAll(try nSpaces(allocator, pos.arrow_x - left_w));
 
         // Arrow
-        var arrow_s = style_mod.Style{};
-        arrow_s = arrow_s.fg(self.arrow_fg).inline_style(true);
-        try writer.writeAll(try arrow_s.render(allocator, self.arrowChar()));
+        try writer.writeAll(try self.renderStyledArrow(allocator));
 
-        // Right part from base (skip arrow_x + 1 columns)
-        const skip = pos.arrow_x + 1;
+        // Right part from base
+        const skip = pos.arrow_x + aw;
         const right = try skipColumns(allocator, base_line, skip);
         try writer.writeAll(right);
-        const total_w = pos.arrow_x + 1 + measure.width(right);
+        const total_w = pos.arrow_x + aw + measure.width(right);
         if (total_w < tw) try writer.writeAll(try nSpaces(allocator, tw - total_w));
     }
 
+    /// Splice box-only row onto base line.
     fn writeSplicedBoxRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, base_line: []const u8, box_line: []const u8, box_w: usize, tw: usize) !void {
         _ = self;
         // Left part from base
@@ -491,6 +517,52 @@ pub const Tooltip = struct {
         try writer.writeAll(right);
         const total_w = pos.box_x + bw + measure.width(right);
         if (total_w < tw) try writer.writeAll(try nSpaces(allocator, tw - total_w));
+    }
+
+    /// Splice box row + side arrow onto base line (left/right placement).
+    fn writeSplicedBoxRowWithSideArrow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, base_line: []const u8, box_line: []const u8, box_w: usize, tw: usize) !void {
+        const box_line_w = measure.width(box_line);
+        const aw = self.arrowDisplayWidth();
+        const styled_arrow = try self.renderStyledArrow(allocator);
+
+        if (self.placement == .right) {
+            // Layout: [base] [arrow] [box_line] [base]
+            // The leftmost replaced column is arrow_x
+            const splice_start = pos.arrow_x;
+            const left = try truncateToWidth(allocator, base_line, splice_start);
+            try writer.writeAll(left);
+            const left_w = measure.width(left);
+            if (left_w < splice_start) try writer.writeAll(try nSpaces(allocator, splice_start - left_w));
+
+            try writer.writeAll(styled_arrow);
+            const gap_between = if (pos.box_x > pos.arrow_x + aw) pos.box_x - pos.arrow_x - aw else 0;
+            try writer.writeAll(try nSpaces(allocator, gap_between));
+            try writer.writeAll(box_line);
+
+            const splice_end = pos.box_x + @max(box_line_w, box_w);
+            const right = try skipColumns(allocator, base_line, splice_end);
+            try writer.writeAll(right);
+            const total_w = splice_start + aw + gap_between + box_line_w + measure.width(right);
+            if (total_w < tw) try writer.writeAll(try nSpaces(allocator, tw - total_w));
+        } else {
+            // .left — Layout: [base] [box_line] [arrow] [base]
+            const splice_start = pos.box_x;
+            const left = try truncateToWidth(allocator, base_line, splice_start);
+            try writer.writeAll(left);
+            const left_w = measure.width(left);
+            if (left_w < splice_start) try writer.writeAll(try nSpaces(allocator, splice_start - left_w));
+
+            try writer.writeAll(box_line);
+            const gap_between = if (pos.arrow_x > pos.box_x + box_line_w) pos.arrow_x - pos.box_x - box_line_w else 0;
+            try writer.writeAll(try nSpaces(allocator, gap_between));
+            try writer.writeAll(styled_arrow);
+
+            const splice_end = pos.arrow_x + aw;
+            const right = try skipColumns(allocator, base_line, splice_end);
+            try writer.writeAll(right);
+            const total_w = splice_start + box_line_w + gap_between + aw + measure.width(right);
+            if (total_w < tw) try writer.writeAll(try nSpaces(allocator, tw - total_w));
+        }
     }
 
     // ── Private Helpers ───────────────────────────────────────────────
@@ -522,7 +594,6 @@ pub const Tooltip = struct {
     }
 
     /// Truncate a string (potentially with ANSI) to at most `max_w` display columns.
-    /// Returns a new slice with only the content up to that width.
     fn truncateToWidth(allocator: std.mem.Allocator, str: []const u8, max_w: usize) ![]const u8 {
         if (max_w == 0) return try allocator.dupe(u8, "");
         if (measure.width(str) <= max_w) return try allocator.dupe(u8, str);
