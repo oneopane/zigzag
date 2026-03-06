@@ -170,6 +170,13 @@ pub const Canvas = struct {
         };
     }
 
+    pub fn drawIntoBuffer(self: *const Canvas, buffer: *charting.CellBuffer) void {
+        switch (self.marker) {
+            .braille => self.drawBrailleIntoBuffer(buffer),
+            .block, .dot, .ascii => self.drawCellIntoBuffer(buffer),
+        }
+    }
+
     fn renderCells(self: *const Canvas, allocator: std.mem.Allocator) ![]const u8 {
         var buffer = try charting.CellBuffer.init(allocator, self.width, self.height);
         defer buffer.deinit();
@@ -180,34 +187,7 @@ pub const Canvas = struct {
             }
         }
 
-        for (self.operations.items) |op| {
-            switch (op) {
-                .point => |point_op| {
-                    const x = charting.mapX(point_op.point.x, self.x_range, self.width);
-                    const y = charting.mapY(point_op.point.y, self.y_range, self.height);
-                    buffer.setSlice(x, y, point_op.glyph orelse self.defaultCellGlyph(), point_op.style);
-                },
-                .line => |line_op| {
-                    const x0 = charting.mapX(line_op.from.x, self.x_range, self.width);
-                    const y0 = charting.mapY(line_op.from.y, self.y_range, self.height);
-                    const x1 = charting.mapX(line_op.to.x, self.x_range, self.width);
-                    const y1 = charting.mapY(line_op.to.y, self.y_range, self.height);
-                    drawLineCells(&buffer, x0, y0, x1, y1, line_op.glyph orelse self.lineCellGlyph(), line_op.style);
-                },
-                .rect => |rect_op| {
-                    const min_x = charting.mapX(rect_op.min.x, self.x_range, self.width);
-                    const min_y = charting.mapY(rect_op.max.y, self.y_range, self.height);
-                    const max_x = charting.mapX(rect_op.max.x, self.x_range, self.width);
-                    const max_y = charting.mapY(rect_op.min.y, self.y_range, self.height);
-                    drawRectCells(&buffer, min_x, min_y, max_x, max_y, rect_op.filled, rect_op.glyph orelse self.lineCellGlyph(), rect_op.style);
-                },
-                .text => |text_op| {
-                    const x = charting.mapX(text_op.origin.x, self.x_range, self.width);
-                    const y = charting.mapY(text_op.origin.y, self.y_range, self.height);
-                    buffer.writeText(x, y, text_op.text, text_op.style);
-                },
-            }
-        }
+        self.drawCellIntoBuffer(&buffer);
 
         return try buffer.render(allocator);
     }
@@ -273,6 +253,81 @@ pub const Canvas = struct {
         }
 
         return try final.render(allocator);
+    }
+
+    fn drawCellIntoBuffer(self: *const Canvas, buffer: *charting.CellBuffer) void {
+        for (self.operations.items) |op| {
+            switch (op) {
+                .point => |point_op| {
+                    const x = charting.mapX(point_op.point.x, self.x_range, self.width);
+                    const y = charting.mapY(point_op.point.y, self.y_range, self.height);
+                    buffer.setSlice(x, y, point_op.glyph orelse self.defaultCellGlyph(), point_op.style);
+                },
+                .line => |line_op| {
+                    const x0 = charting.mapX(line_op.from.x, self.x_range, self.width);
+                    const y0 = charting.mapY(line_op.from.y, self.y_range, self.height);
+                    const x1 = charting.mapX(line_op.to.x, self.x_range, self.width);
+                    const y1 = charting.mapY(line_op.to.y, self.y_range, self.height);
+                    drawLineCells(buffer, x0, y0, x1, y1, line_op.glyph orelse self.lineCellGlyph(), line_op.style);
+                },
+                .rect => |rect_op| {
+                    const min_x = charting.mapX(rect_op.min.x, self.x_range, self.width);
+                    const min_y = charting.mapY(rect_op.max.y, self.y_range, self.height);
+                    const max_x = charting.mapX(rect_op.max.x, self.x_range, self.width);
+                    const max_y = charting.mapY(rect_op.min.y, self.y_range, self.height);
+                    drawRectCells(buffer, min_x, min_y, max_x, max_y, rect_op.filled, rect_op.glyph orelse self.lineCellGlyph(), rect_op.style);
+                },
+                .text => |text_op| {
+                    const x = charting.mapX(text_op.origin.x, self.x_range, self.width);
+                    const y = charting.mapY(text_op.origin.y, self.y_range, self.height);
+                    buffer.writeText(x, y, text_op.text, text_op.style);
+                },
+            }
+        }
+    }
+
+    fn drawBrailleIntoBuffer(self: *const Canvas, buffer: *charting.CellBuffer) void {
+        const cell_count = @as(usize, self.width) * @as(usize, self.height);
+        const braille_cells = buffer.allocator.alloc(BrailleCell, cell_count) catch return;
+        defer buffer.allocator.free(braille_cells);
+        for (braille_cells) |*cell| cell.* = .{};
+
+        for (self.operations.items) |op| {
+            switch (op) {
+                .point => |point_op| {
+                    const x = charting.mapX(point_op.point.x, self.x_range, @as(usize, self.width) * 2);
+                    const y = charting.mapY(point_op.point.y, self.y_range, @as(usize, self.height) * 4);
+                    setBraillePixel(braille_cells, self.width, x, y, point_op.style);
+                },
+                .line => |line_op| {
+                    const x0 = charting.mapX(line_op.from.x, self.x_range, @as(usize, self.width) * 2);
+                    const y0 = charting.mapY(line_op.from.y, self.y_range, @as(usize, self.height) * 4);
+                    const x1 = charting.mapX(line_op.to.x, self.x_range, @as(usize, self.width) * 2);
+                    const y1 = charting.mapY(line_op.to.y, self.y_range, @as(usize, self.height) * 4);
+                    drawBrailleLine(braille_cells, self.width, x0, y0, x1, y1, line_op.style);
+                },
+                .rect => |rect_op| {
+                    const min_x = charting.mapX(rect_op.min.x, self.x_range, @as(usize, self.width) * 2);
+                    const min_y = charting.mapY(rect_op.max.y, self.y_range, @as(usize, self.height) * 4);
+                    const max_x = charting.mapX(rect_op.max.x, self.x_range, @as(usize, self.width) * 2);
+                    const max_y = charting.mapY(rect_op.min.y, self.y_range, @as(usize, self.height) * 4);
+                    drawBrailleRect(braille_cells, self.width, min_x, min_y, max_x, max_y, rect_op.filled, rect_op.style);
+                },
+                .text => |text_op| {
+                    const x = charting.mapX(text_op.origin.x, self.x_range, self.width);
+                    const y = charting.mapY(text_op.origin.y, self.y_range, self.height);
+                    buffer.writeText(x, y, text_op.text, text_op.style);
+                },
+            }
+        }
+
+        for (0..self.height) |y| {
+            for (0..self.width) |x| {
+                const cell = braille_cells[y * self.width + x];
+                if (cell.bits == 0) continue;
+                buffer.setCodepoint(x, y, @as(u21, 0x2800) + cell.bits, cell.style);
+            }
+        }
     }
 
     fn defaultCellGlyph(self: *const Canvas) []const u8 {

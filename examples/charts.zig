@@ -33,8 +33,12 @@ const Model = struct {
         var cpu = zz.ChartDataset.init(ctx.persistent_allocator, "CPU") catch unreachable;
         cpu.setStyle((zz.Style{}).fg(zz.Color.cyan()).bold(true));
         cpu.setShowPoints(true);
+        cpu.setInterpolation(.monotone_cubic);
+        cpu.setInterpolationSteps(10);
         var mem = zz.ChartDataset.init(ctx.persistent_allocator, "Memory") catch unreachable;
         mem.setStyle((zz.Style{}).fg(zz.Color.magenta()));
+        mem.setInterpolation(.catmull_rom);
+        mem.setInterpolationSteps(10);
 
         for (0..24) |i| {
             const x = @as(f64, @floatFromInt(i));

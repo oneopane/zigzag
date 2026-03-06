@@ -399,7 +399,7 @@ const chart = try spark.view(allocator);
 
 ### Chart
 
-Cartesian chart with multiple datasets, axes, grid lines, legends, and selectable markers:
+Cartesian chart with multiple datasets, axes, grid lines, legends, selectable markers, and interpolation modes (`linear`, stepped, `catmull_rom`, `monotone_cubic`):
 
 ```zig
 var chart = zz.Chart.init(allocator);
@@ -411,6 +411,8 @@ chart.y_axis = .{ .title = "CPU", .tick_count = 5, .show_grid = true };
 var dataset = try zz.ChartDataset.init(allocator, "load");
 dataset.setStyle((zz.Style{}).fg(zz.Color.cyan()).bold(true));
 dataset.setShowPoints(true);
+dataset.setInterpolation(.monotone_cubic);
+dataset.setInterpolationSteps(10);
 try dataset.setPoints(&.{
     .{ .x = 0, .y = 20 },
     .{ .x = 1, .y = 45 },

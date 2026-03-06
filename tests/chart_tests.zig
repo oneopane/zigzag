@@ -73,6 +73,49 @@ test "chart renders titles and legend" {
     try testing.expect(std.mem.indexOf(u8, plain, "Load") != null);
 }
 
+test "chart dataset supports curved interpolation modes" {
+    const allocator = testing.allocator;
+
+    var chart = zz.Chart.init(allocator);
+    defer chart.deinit();
+
+    chart.setSize(32, 12);
+    chart.setMarker(.ascii);
+    chart.x_axis = .{ .tick_count = 4 };
+    chart.y_axis = .{ .tick_count = 4 };
+
+    var smooth = try zz.ChartDataset.init(allocator, "smooth");
+    smooth.setGraphType(.line);
+    smooth.setInterpolation(.monotone_cubic);
+    smooth.setInterpolationSteps(12);
+    try smooth.setPoints(&.{
+        .{ .x = 0, .y = 10 },
+        .{ .x = 1, .y = 35 },
+        .{ .x = 2, .y = 18 },
+        .{ .x = 3, .y = 42 },
+    });
+    try chart.addDataset(smooth);
+
+    var stepped = try zz.ChartDataset.init(allocator, "step");
+    stepped.setGraphType(.line);
+    stepped.setInterpolation(.step_center);
+    try stepped.setPoints(&.{
+        .{ .x = 0, .y = 8 },
+        .{ .x = 1, .y = 14 },
+        .{ .x = 2, .y = 9 },
+        .{ .x = 3, .y = 20 },
+    });
+    try chart.addDataset(stepped);
+
+    const view = try chart.view(allocator);
+    defer allocator.free(view);
+    const plain = try stripAnsi(allocator, view);
+    defer allocator.free(plain);
+
+    try testing.expect(std.mem.indexOf(u8, plain, "smooth") != null);
+    try testing.expect(std.mem.indexOf(u8, plain, "step") != null);
+}
+
 test "horizontal bar chart supports negative values" {
     const allocator = testing.allocator;
 

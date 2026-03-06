@@ -5,13 +5,13 @@ const charting = @import("charting.zig");
 const canvas_mod = @import("canvas.zig");
 const join = @import("../layout/join.zig");
 const measure = @import("../layout/measure.zig");
-const place = @import("../layout/place.zig");
 const style_mod = @import("../style/style.zig");
 
 pub const Style = style_mod.Style;
 pub const AxisLabel = charting.AxisLabel;
 pub const DataRange = charting.DataRange;
 pub const GraphType = charting.GraphType;
+pub const Interpolation = charting.Interpolation;
 pub const LegendPosition = charting.LegendPosition;
 pub const Marker = charting.Marker;
 pub const Point = charting.Point;
@@ -38,6 +38,9 @@ pub const Dataset = struct {
     points: std.array_list.Managed(Point),
     style: Style,
     graph_type: GraphType,
+    interpolation: Interpolation,
+    interpolation_steps: u8,
+    curve_tension: f64,
     show_points: bool,
     point_glyph: ?[]const u8,
     fill_to: ?f64,
@@ -49,6 +52,9 @@ pub const Dataset = struct {
             .points = std.array_list.Managed(Point).init(allocator),
             .style = charting.inlineStyle(Style{}),
             .graph_type = .line,
+            .interpolation = .linear,
+            .interpolation_steps = 8,
+            .curve_tension = 0.5,
             .show_points = false,
             .point_glyph = null,
             .fill_to = null,
@@ -66,6 +72,18 @@ pub const Dataset = struct {
 
     pub fn setGraphType(self: *Dataset, graph_type: GraphType) void {
         self.graph_type = graph_type;
+    }
+
+    pub fn setInterpolation(self: *Dataset, interpolation: Interpolation) void {
+        self.interpolation = interpolation;
+    }
+
+    pub fn setInterpolationSteps(self: *Dataset, steps: u8) void {
+        self.interpolation_steps = @max(@as(u8, 1), steps);
+    }
+
+    pub fn setCurveTension(self: *Dataset, tension: f64) void {
+        self.curve_tension = std.math.clamp(tension, 0.0, 1.0);
     }
 
     pub fn setShowPoints(self: *Dataset, show_points: bool) void {
@@ -152,9 +170,9 @@ pub const Chart = struct {
         const resolved_x = self.resolveRange(.x);
         const resolved_y = self.resolveRange(.y);
 
-        var x_ticks = try TickSet.init(allocator, self.x_axis, resolved_x, self.width);
+        var x_ticks = try TickSet.init(allocator, self.x_axis, resolved_x);
         defer x_ticks.deinit();
-        var y_ticks = try TickSet.init(allocator, self.y_axis, resolved_y, self.height);
+        var y_ticks = try TickSet.init(allocator, self.y_axis, resolved_y);
         defer y_ticks.deinit();
 
         const y_label_width = if (self.y_axis.show_labels) y_ticks.maxLabelWidth() else 0;
@@ -173,13 +191,10 @@ pub const Chart = struct {
         const plot_width = @max(@as(usize, 1), @as(usize, self.width) -| left_gutter);
         const plot_height = @max(@as(usize, 1), @as(usize, self.height) -| (x_axis_line_rows + x_label_rows + x_title_rows + y_title_rows));
 
-        const grid = try self.renderGrid(allocator, plot_width, plot_height, &x_ticks, &y_ticks);
-        defer allocator.free(grid);
+        x_ticks.updatePositions(plot_width);
+        y_ticks.updatePositions(plot_height);
 
-        const datasets_view = try self.renderDatasets(allocator, plot_width, plot_height, resolved_x, resolved_y);
-        defer allocator.free(datasets_view);
-
-        const plot = try place.overlay(allocator, grid, datasets_view, 0, 0);
+        const plot = try self.renderPlot(allocator, plot_width, plot_height, resolved_x, resolved_y, &x_ticks, &y_ticks);
         defer allocator.free(plot);
 
         var rows = std.array_list.Managed([]const u8).init(allocator);
@@ -279,7 +294,7 @@ pub const Chart = struct {
         return range.normalized();
     }
 
-    fn renderGrid(self: *const Chart, allocator: std.mem.Allocator, plot_width: usize, plot_height: usize, x_ticks: *const TickSet, y_ticks: *const TickSet) ![]const u8 {
+    fn renderPlot(self: *const Chart, allocator: std.mem.Allocator, plot_width: usize, plot_height: usize, x_range: DataRange, y_range: DataRange, x_ticks: *const TickSet, y_ticks: *const TickSet) ![]const u8 {
         var buffer = try charting.CellBuffer.init(allocator, plot_width, plot_height);
         defer buffer.deinit();
 
@@ -307,29 +322,27 @@ pub const Chart = struct {
             }
         }
 
-        return try buffer.render(allocator);
-    }
-
-    fn renderDatasets(self: *const Chart, allocator: std.mem.Allocator, plot_width: usize, plot_height: usize, x_range: DataRange, y_range: DataRange) ![]const u8 {
         var plot = canvas_mod.Canvas.init(allocator);
         defer plot.deinit();
 
         plot.setSize(@intCast(plot_width), @intCast(plot_height));
         plot.setRanges(x_range, y_range);
         plot.setMarker(self.marker);
-        plot.setBackground(" ");
 
         for (self.datasets.items) |dataset| {
+            var path = try sampledPath(allocator, &dataset);
+            defer path.deinit();
+
             switch (dataset.graph_type) {
                 .line => {
                     if (dataset.points.items.len == 1) {
                         const point = dataset.points.items[0];
                         try plot.drawPointStyled(point.x, point.y, dataset.style, dataset.point_glyph);
-                    } else if (dataset.points.items.len > 1) {
+                    } else if (path.items.len > 1) {
                         var i: usize = 1;
-                        while (i < dataset.points.items.len) : (i += 1) {
-                            const prev = dataset.points.items[i - 1];
-                            const point = dataset.points.items[i];
+                        while (i < path.items.len) : (i += 1) {
+                            const prev = path.items[i - 1];
+                            const point = path.items[i];
                             try plot.drawLineStyled(prev.x, prev.y, point.x, point.y, dataset.style, null);
                         }
                     }
@@ -346,24 +359,25 @@ pub const Chart = struct {
                     }
                 },
                 .area => {
-                    if (dataset.points.items.len > 1) {
+                    if (path.items.len > 1) {
                         var i: usize = 1;
-                        while (i < dataset.points.items.len) : (i += 1) {
-                            const prev = dataset.points.items[i - 1];
-                            const point = dataset.points.items[i];
+                        while (i < path.items.len) : (i += 1) {
+                            const prev = path.items[i - 1];
+                            const point = path.items[i];
                             try plot.drawLineStyled(prev.x, prev.y, point.x, point.y, dataset.style, null);
                         }
                     }
 
                     const baseline = dataset.fill_to orelse y_range.min;
-                    for (dataset.points.items) |point| {
+                    for (path.items) |point| {
                         try plot.drawLineStyled(point.x, baseline, point.x, point.y, dataset.style, null);
                     }
                 },
             }
         }
 
-        return try plot.view(allocator);
+        plot.drawIntoBuffer(&buffer);
+        return try buffer.render(allocator);
     }
 
     fn renderYAxisTitleRow(self: *const Chart, allocator: std.mem.Allocator, y_label_width: usize, plot_width: usize) ![]const u8 {
@@ -487,20 +501,24 @@ pub const Chart = struct {
 
 const TickSet = struct {
     allocator: std.mem.Allocator,
+    range: DataRange,
+    values: std.array_list.Managed(f64),
     positions: std.array_list.Managed(usize),
     labels: std.array_list.Managed([]const u8),
 
-    fn init(allocator: std.mem.Allocator, axis: Axis, range: DataRange, span_hint: usize) !TickSet {
+    fn init(allocator: std.mem.Allocator, axis: Axis, range: DataRange) !TickSet {
         var self = TickSet{
             .allocator = allocator,
+            .range = range,
+            .values = std.array_list.Managed(f64).init(allocator),
             .positions = std.array_list.Managed(usize).init(allocator),
             .labels = std.array_list.Managed([]const u8).init(allocator),
         };
 
-        const span = @max(@as(usize, 1), span_hint);
         if (axis.labels.len > 0) {
             for (axis.labels) |label| {
-                try self.positions.append(charting.mapToResolution(label.value, range, span));
+                try self.values.append(label.value);
+                try self.positions.append(0);
                 try self.labels.append(try allocator.dupe(u8, label.text));
             }
             return self;
@@ -511,7 +529,8 @@ const TickSet = struct {
         while (i < tick_count) : (i += 1) {
             const t = if (tick_count == 1) 0.0 else @as(f64, @floatFromInt(i)) / @as(f64, @floatFromInt(tick_count - 1));
             const value = range.min + (range.max - range.min) * t;
-            try self.positions.append(charting.mapToResolution(value, range, span));
+            try self.values.append(value);
+            try self.positions.append(0);
 
             const formatter = axis.formatter orelse charting.defaultFormatter;
             const label = try formatter(allocator, value);
@@ -521,8 +540,16 @@ const TickSet = struct {
         return self;
     }
 
+    fn updatePositions(self: *TickSet, span: usize) void {
+        const usable_span = @max(@as(usize, 1), span);
+        for (self.values.items, 0..) |value, index| {
+            self.positions.items[index] = charting.mapToResolution(value, self.range, usable_span);
+        }
+    }
+
     fn deinit(self: *TickSet) void {
         for (self.labels.items) |label| self.allocator.free(label);
+        self.values.deinit();
         self.positions.deinit();
         self.labels.deinit();
     }
@@ -583,4 +610,148 @@ fn leftPrefixWidth(self: *const Chart, y_label_width: usize) usize {
         @as(usize, 1)
     else
         @as(usize, 0));
+}
+
+fn sampledPath(allocator: std.mem.Allocator, dataset: *const Dataset) !std.array_list.Managed(Point) {
+    var path = std.array_list.Managed(Point).init(allocator);
+    if (dataset.points.items.len == 0) return path;
+
+    switch (dataset.interpolation) {
+        .linear => try path.appendSlice(dataset.points.items),
+        .step_start => try appendSteppedPoints(&path, dataset.points.items, .step_start),
+        .step_center => try appendSteppedPoints(&path, dataset.points.items, .step_center),
+        .step_end => try appendSteppedPoints(&path, dataset.points.items, .step_end),
+        .catmull_rom => try appendCatmullRomPoints(&path, dataset.points.items, dataset.interpolation_steps, dataset.curve_tension),
+        .monotone_cubic => try appendMonotonePoints(allocator, &path, dataset.points.items, dataset.interpolation_steps),
+    }
+
+    return path;
+}
+
+fn appendSteppedPoints(path: *std.array_list.Managed(Point), points: []const Point, mode: Interpolation) !void {
+    if (points.len == 0) return;
+    try path.append(points[0]);
+
+    for (points[1..], 1..) |point, index| {
+        const prev = points[index - 1];
+        switch (mode) {
+            .step_start => {
+                try path.append(.{ .x = prev.x, .y = point.y });
+            },
+            .step_center => {
+                const mid_x = prev.x + (point.x - prev.x) / 2.0;
+                try path.append(.{ .x = mid_x, .y = prev.y });
+                try path.append(.{ .x = mid_x, .y = point.y });
+            },
+            .step_end => {
+                try path.append(.{ .x = point.x, .y = prev.y });
+            },
+            else => unreachable,
+        }
+        try path.append(point);
+    }
+}
+
+fn appendCatmullRomPoints(path: *std.array_list.Managed(Point), points: []const Point, steps: u8, tension: f64) !void {
+    if (points.len <= 2) {
+        try path.appendSlice(points);
+        return;
+    }
+
+    const alpha = 1.0 - tension;
+    try path.append(points[0]);
+
+    var i: usize = 0;
+    while (i + 1 < points.len) : (i += 1) {
+        const p0 = if (i == 0) points[i] else points[i - 1];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = if (i + 2 < points.len) points[i + 2] else points[i + 1];
+
+        var step: usize = 1;
+        while (step <= steps) : (step += 1) {
+            const t = @as(f64, @floatFromInt(step)) / @as(f64, @floatFromInt(steps));
+            try path.append(catmullRomPoint(p0, p1, p2, p3, t, alpha));
+        }
+    }
+}
+
+fn catmullRomPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: f64, alpha: f64) Point {
+    const t2 = t * t;
+    const t3 = t2 * t;
+
+    const a0 = -alpha * t3 + 2.0 * alpha * t2 - alpha * t;
+    const a1 = (2.0 - alpha) * t3 + (alpha - 3.0) * t2 + 1.0;
+    const a2 = (alpha - 2.0) * t3 + (3.0 - 2.0 * alpha) * t2 + alpha * t;
+    const a3 = alpha * t3 - alpha * t2;
+
+    return .{
+        .x = a0 * p0.x + a1 * p1.x + a2 * p2.x + a3 * p3.x,
+        .y = a0 * p0.y + a1 * p1.y + a2 * p2.y + a3 * p3.y,
+    };
+}
+
+fn appendMonotonePoints(allocator: std.mem.Allocator, path: *std.array_list.Managed(Point), points: []const Point, steps: u8) !void {
+    if (points.len <= 2 or !strictlyIncreasingX(points)) {
+        try path.appendSlice(points);
+        return;
+    }
+
+    const delta = try allocator.alloc(f64, points.len - 1);
+    defer allocator.free(delta);
+    const slopes = try allocator.alloc(f64, points.len);
+    defer allocator.free(slopes);
+
+    for (0..points.len - 1) |i| {
+        const dx = points[i + 1].x - points[i].x;
+        if (dx <= 0) {
+            try path.appendSlice(points);
+            return;
+        }
+        delta[i] = (points[i + 1].y - points[i].y) / dx;
+    }
+
+    slopes[0] = delta[0];
+    slopes[points.len - 1] = delta[delta.len - 1];
+
+    for (1..points.len - 1) |i| {
+        if (delta[i - 1] == 0 or delta[i] == 0 or std.math.signbit(delta[i - 1]) != std.math.signbit(delta[i])) {
+            slopes[i] = 0;
+        } else {
+            const h0 = points[i].x - points[i - 1].x;
+            const h1 = points[i + 1].x - points[i].x;
+            const w1 = 2.0 * h1 + h0;
+            const w2 = h1 + 2.0 * h0;
+            slopes[i] = (w1 + w2) / (w1 / delta[i - 1] + w2 / delta[i]);
+        }
+    }
+
+    try path.append(points[0]);
+    for (0..points.len - 1) |i| {
+        const p0 = points[i];
+        const p1 = points[i + 1];
+        const dx = p1.x - p0.x;
+
+        var step: usize = 1;
+        while (step <= steps) : (step += 1) {
+            const t = @as(f64, @floatFromInt(step)) / @as(f64, @floatFromInt(steps));
+            const t2 = t * t;
+            const t3 = t2 * t;
+            const h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+            const h10 = t3 - 2.0 * t2 + t;
+            const h01 = -2.0 * t3 + 3.0 * t2;
+            const h11 = t3 - t2;
+            try path.append(.{
+                .x = p0.x + dx * t,
+                .y = h00 * p0.y + h10 * dx * slopes[i] + h01 * p1.y + h11 * dx * slopes[i + 1],
+            });
+        }
+    }
+}
+
+fn strictlyIncreasingX(points: []const Point) bool {
+    for (points[1..], 1..) |point, index| {
+        if (!(point.x > points[index - 1].x)) return false;
+    }
+    return true;
 }

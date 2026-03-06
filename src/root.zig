@@ -232,6 +232,7 @@ pub const PlotPoint = components.charting.Point;
 pub const PlotRange = components.charting.DataRange;
 pub const PlotMarker = components.charting.Marker;
 pub const GraphType = components.chart.GraphType;
+pub const ChartInterpolation = components.chart.Interpolation;
 pub const Axis = components.chart.Axis;
 pub const AxisLabel = components.chart.AxisLabel;
 pub const ChartDataset = components.chart.Dataset;

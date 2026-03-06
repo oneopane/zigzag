@@ -54,6 +54,15 @@ pub const GraphType = enum {
     area,
 };
 
+pub const Interpolation = enum {
+    linear,
+    step_start,
+    step_center,
+    step_end,
+    catmull_rom,
+    monotone_cubic,
+};
+
 pub const Orientation = enum {
     vertical,
     horizontal,
