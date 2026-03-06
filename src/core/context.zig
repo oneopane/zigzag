@@ -184,6 +184,24 @@ pub const Context = struct {
         return false;
     }
 
+    /// Query clipboard bytes via OSC 52 using terminal defaults.
+    /// Returns null when unavailable, blocked, or timed out.
+    pub fn getClipboard(self: *Context, allocator: std.mem.Allocator) !?[]u8 {
+        if (self._terminal) |term| {
+            return term.getClipboard(allocator);
+        }
+        return null;
+    }
+
+    /// Query clipboard bytes via OSC 52 with per-call overrides.
+    /// Returns null when unavailable, blocked, or timed out.
+    pub fn getClipboardWithOptions(self: *Context, allocator: std.mem.Allocator, options: terminal_mod.Osc52ReadOptions) !?[]u8 {
+        if (self._terminal) |term| {
+            return term.getClipboardWithOptions(allocator, options);
+        }
+        return null;
+    }
+
     /// Draw a PNG image file via Kitty graphics protocol (`t=f`).
     /// Returns false when unsupported or path is empty.
     pub fn drawKittyImageFromFile(self: *Context, path: []const u8, options: Terminal.KittyImageFileOptions) !bool {
