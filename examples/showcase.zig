@@ -88,7 +88,7 @@ const Model = struct {
         self.sparkline.setGradient(zz.Color.hex("#F97316"), zz.Color.hex("#22C55E"));
 
         self.chart = zz.Chart.init(ctx.persistent_allocator);
-        self.chart.setSize(52, 18);
+        self.chart.setSize(42, 13);
         self.chart.setMarker(.braille);
         self.chart.setLegendPosition(.top);
         self.chart.x_axis = .{
@@ -131,7 +131,7 @@ const Model = struct {
         self.chart.addDataset(backlog) catch unreachable;
 
         self.bars = zz.BarChart.init(ctx.persistent_allocator);
-        self.bars.setSize(32, 12);
+        self.bars.setSize(28, 8);
         self.bars.setOrientation(.horizontal);
         self.bars.show_values = true;
         self.bars.label_style = (zz.Style{}).fg(zz.Color.gray(18)).inline_style(true);
@@ -482,6 +482,34 @@ const Model = struct {
         ) catch main_view;
     }
 
+    fn chartsCompact(ctx: *const zz.Context) bool {
+        return ctx.height <= 34 or ctx.width <= 120;
+    }
+
+    fn chartsUltraCompact(ctx: *const zz.Context) bool {
+        return ctx.height <= 28 or ctx.width <= 96;
+    }
+
+    fn syncChartsLayout(self: *Model, ctx: *const zz.Context) void {
+        const ultra = chartsUltraCompact(ctx);
+        const compact = ultra or chartsCompact(ctx);
+
+        self.chart.setSize(
+            if (ultra) 34 else if (compact) 38 else 42,
+            if (ultra) 8 else if (compact) 10 else 13,
+        );
+        self.chart.setLegendPosition(if (ultra) .hidden else .top);
+        self.chart.x_axis.title = if (compact) "" else "Time";
+        self.chart.x_axis.tick_count = if (ultra) 4 else 5;
+        self.chart.y_axis.title = if (compact) "" else "Utilization";
+        self.chart.y_axis.tick_count = if (ultra) 4 else 5;
+
+        self.bars.setSize(if (ultra) 22 else 26, if (ultra) 4 else 5);
+        self.bars.setBarWidth(1);
+        self.bars.setGap(0);
+        self.bars.show_values = !compact;
+    }
+
     fn renderTabBar(self: *const Model, ctx: *const zz.Context) ![]const u8 {
         var result = std.array_list.Managed(u8).init(ctx.allocator);
         const writer = result.writer();
@@ -721,6 +749,8 @@ const Model = struct {
     }
 
     fn renderChartsTab(self: *const Model, ctx: *const zz.Context) ![]const u8 {
+        @constCast(self).syncChartsLayout(ctx);
+
         const trend_view = try self.chart.view(ctx.allocator);
         const bars_view = try self.bars.view(ctx.allocator);
         const vertical_view = try self.renderVerticalBars(ctx);
@@ -730,17 +760,17 @@ const Model = struct {
         var trend_style = zz.Style{};
         trend_style = trend_style.borderAll(zz.Border.rounded);
         trend_style = trend_style.borderForeground(zz.Color.cyan());
-        trend_style = trend_style.paddingAll(1);
+        trend_style = trend_style.paddingLeft(1).paddingRight(1);
 
         var bars_style = zz.Style{};
         bars_style = bars_style.borderAll(zz.Border.rounded);
         bars_style = bars_style.borderForeground(zz.Color.green());
-        bars_style = bars_style.paddingAll(1);
+        bars_style = bars_style.paddingLeft(1).paddingRight(1);
 
         var aux_style = zz.Style{};
         aux_style = aux_style.borderAll(zz.Border.rounded);
         aux_style = aux_style.borderForeground(zz.Color.yellow());
-        aux_style = aux_style.paddingAll(1);
+        aux_style = aux_style.paddingLeft(1).paddingRight(1);
 
         const trend_box = try trend_style.render(ctx.allocator, try self.section(ctx, "Interpolated Lines + Area", trend_view));
         const bars_box = try bars_style.render(ctx.allocator, try self.section(ctx, "Horizontal Bars", bars_view));
@@ -748,16 +778,17 @@ const Model = struct {
         const snapshot_box = try aux_style.render(ctx.allocator, try self.section(ctx, "Static Snapshot", snapshot_view));
         const canvas_box = try aux_style.render(ctx.allocator, try self.section(ctx, "Canvas Plot", canvas_view));
 
-        const top = try zz.joinHorizontal(ctx.allocator, &.{ trend_box, "  ", bars_box });
-        const bottom = try zz.joinHorizontal(ctx.allocator, &.{ vertical_box, "  ", snapshot_box, "  ", canvas_box });
+        if (chartsUltraCompact(ctx)) {
+            return zz.join.vertical(ctx.allocator, .center, &.{ trend_box, "", bars_box });
+        }
 
-        var hint_style = zz.Style{};
-        hint_style = hint_style.fg(zz.Color.gray(10));
-        hint_style = hint_style.italic(true);
-        hint_style = hint_style.inline_style(true);
-        const hint = try hint_style.render(ctx.allocator, "Live charts sample at a slower cadence; static snapshot panels show that charts stay fixed until your model changes the data.");
+        const bottom = if (chartsCompact(ctx))
+            try zz.join.horizontal(ctx.allocator, .middle, &.{ bars_box, "  ", snapshot_box })
+        else
+            try zz.join.horizontal(ctx.allocator, .middle, &.{ bars_box, "  ", snapshot_box, "  ", canvas_box });
 
-        return zz.joinVertical(ctx.allocator, &.{ top, "", bottom, "", hint });
+        _ = vertical_box;
+        return zz.join.vertical(ctx.allocator, .center, &.{ trend_box, "", bottom });
     }
 
     fn renderFilesTab(self: *const Model, ctx: *const zz.Context) ![]const u8 {
@@ -780,12 +811,16 @@ const Model = struct {
     }
 
     fn renderVerticalBars(_: *const Model, ctx: *const zz.Context) ![]const u8 {
+        const compact = chartsCompact(ctx);
+        const ultra = chartsUltraCompact(ctx);
         var chart = zz.BarChart.init(ctx.allocator);
         defer chart.deinit();
 
-        chart.setSize(24, 10);
+        chart.setSize(if (ultra) 16 else if (compact) 18 else 20, if (ultra) 5 else if (compact) 6 else 8);
         chart.setOrientation(.vertical);
-        chart.show_values = true;
+        chart.setBarWidth(1);
+        chart.setGap(0);
+        chart.show_values = !compact;
         chart.label_style = (zz.Style{}).fg(zz.Color.gray(18)).inline_style(true);
         chart.axis_style = (zz.Style{}).fg(zz.Color.gray(10)).inline_style(true);
         chart.positive_style = (zz.Style{}).fg(zz.Color.hex("#F97316")).inline_style(true);
@@ -800,10 +835,12 @@ const Model = struct {
 
     fn renderChartCanvas(self: *const Model, ctx: *const zz.Context) ![]const u8 {
         _ = self;
+        const compact = chartsCompact(ctx);
+        const ultra = chartsUltraCompact(ctx);
         var canvas = zz.Canvas.init(ctx.allocator);
         defer canvas.deinit();
 
-        canvas.setSize(24, 10);
+        canvas.setSize(if (ultra) 16 else if (compact) 18 else 20, if (ultra) 5 else if (compact) 6 else 8);
         canvas.setMarker(.braille);
         canvas.setRanges(.{ .min = -1.2, .max = 1.2 }, .{ .min = -1.2, .max = 1.2 });
 
@@ -820,14 +857,16 @@ const Model = struct {
     }
 
     fn renderStaticSnapshot(_: *const Model, ctx: *const zz.Context) ![]const u8 {
+        const compact = chartsCompact(ctx);
+        const ultra = chartsUltraCompact(ctx);
         var chart = zz.Chart.init(ctx.allocator);
         defer chart.deinit();
 
-        chart.setSize(24, 10);
+        chart.setSize(if (ultra) 16 else if (compact) 18 else 20, if (ultra) 6 else if (compact) 7 else 8);
         chart.setMarker(.braille);
-        chart.setLegendPosition(.top);
-        chart.x_axis = .{ .title = "Quarter", .tick_count = 4, .show_grid = true };
-        chart.y_axis = .{ .title = "Score", .tick_count = 4, .show_grid = true };
+        chart.setLegendPosition(if (compact) .hidden else .top);
+        chart.x_axis = .{ .title = if (compact) "" else "Quarter", .tick_count = if (ultra) 3 else 4, .show_grid = !ultra };
+        chart.y_axis = .{ .title = if (compact) "" else "Score", .tick_count = if (ultra) 3 else 4, .show_grid = !ultra };
 
         var actual = try zz.ChartDataset.init(ctx.allocator, "A");
         actual.setStyle((zz.Style{}).fg(zz.Color.hex("#22C55E")).bold(true));
@@ -862,7 +901,7 @@ const Model = struct {
         header_style = header_style.fg(zz.Color.white());
         header_style = header_style.inline_style(true);
         const header = try header_style.render(ctx.allocator, title);
-        return try std.fmt.allocPrint(ctx.allocator, "{s}\n\n{s}", .{ header, body });
+        return try std.fmt.allocPrint(ctx.allocator, "{s}\n{s}", .{ header, body });
     }
 
     fn renderEditorTab(self: *const Model, ctx: *const zz.Context) ![]const u8 {

@@ -407,7 +407,9 @@ const chart = try spark.view(allocator);
 
 Cartesian chart with multiple datasets, axes, grid lines, legends, selectable markers, and interpolation modes (`linear`, stepped, `catmull_rom`, `monotone_cubic`):
 
-Charts are passive views over your data. They do not animate on their own; they only change when your model updates the dataset. `zig build run-charts` and the `Charts` tab in `zig build run-showcase` now demonstrate both static snapshot charts and slower sampled/live updates. The standalone `run-charts` demo also auto-sizes to the current terminal and uses a scrollable viewport when the content is larger than the screen.
+Charts are passive views over your data. They do not animate on their own; they only change when your model updates the dataset. `zig build run-charts` and the `Charts` tab in `zig build run-showcase` demonstrate both static snapshot charts and slower sampled/live updates. The standalone `run-charts` demo now renders as a compact chart dashboard that fits like the other examples instead of behaving like a scrollable document.
+
+![Charts Example](assets/charts.jpg)
 
 ```zig
 var chart = zz.Chart.init(allocator);
