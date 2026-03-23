@@ -128,6 +128,11 @@ pub const components = struct {
     pub const tab_group = @import("components/tab_group.zig");
     pub const TabGroup = tab_group.TabGroup;
     pub const MenuBar = @import("components/menu_bar.zig").MenuBar;
+    pub const checkbox = @import("components/checkbox.zig");
+    pub const Checkbox = checkbox.Checkbox;
+    pub const CheckboxGroup = checkbox.CheckboxGroup;
+    pub const RadioGroup = @import("components/radio_group.zig").RadioGroup;
+    pub const Dropdown = @import("components/dropdown.zig").Dropdown;
 };
 
 // Re-export commonly used components at top level
@@ -150,6 +155,10 @@ pub const Modal = components.Modal;
 pub const Tooltip = components.Tooltip;
 pub const TabGroup = components.TabGroup;
 pub const MenuBar = components.MenuBar;
+pub const Checkbox = components.Checkbox;
+pub const CheckboxGroup = components.CheckboxGroup;
+pub const RadioGroup = components.RadioGroup;
+pub const Dropdown = components.Dropdown;
 
 // Focus management
 pub const FocusGroup = components.focus.FocusGroup;
