@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
         "tooltip",
         "tabs",
         "clipboard_osc52",
+        "slider",
     };
 
     for (examples) |example_name| {
@@ -68,6 +69,7 @@ pub fn build(b: *std.Build) void {
         "tests/tab_group_tests.zig",
         "tests/chart_tests.zig",
         "tests/viewport_tests.zig",
+        "tests/slider_tests.zig",
     };
 
     const test_step = b.step("test", "Run unit tests");
