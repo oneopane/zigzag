@@ -85,6 +85,10 @@ pub const color = @import("style/color.zig");
 pub const Color = color.Color;
 pub const border = @import("style/border.zig");
 pub const Border = border.Border;
+pub const theme = @import("style/theme.zig");
+pub const Theme = theme.Theme;
+pub const Palette = theme.Palette;
+pub const AdaptivePalette = theme.AdaptivePalette;
 
 // Layout
 pub const layout = @import("layout/layout.zig");
