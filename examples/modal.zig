@@ -15,6 +15,7 @@ const zz = @import("zigzag");
 const Model = struct {
     modal: zz.Modal,
     last_result: []const u8,
+    last_result_buf: [64]u8,
     status: []const u8,
 
     pub const Msg = union(enum) {
@@ -24,11 +25,12 @@ const Model = struct {
     pub fn init(self: *Model, _: *zz.Context) zz.Cmd(Msg) {
         self.modal = zz.Modal.init();
         self.last_result = "None";
+        self.last_result_buf = undefined;
         self.status = "Press 1-5 to open a modal";
         return .none;
     }
 
-    pub fn update(self: *Model, m: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
+    pub fn update(self: *Model, m: Msg, _: *zz.Context) zz.Cmd(Msg) {
         switch (m) {
             .key => |k| {
                 // If modal is visible, let it handle keys
@@ -38,8 +40,8 @@ const Model = struct {
                     // Check for result
                     if (self.modal.getResult()) |res| {
                         self.last_result = switch (res) {
-                            .button_pressed => |idx| std.fmt.allocPrint(
-                                ctx.persistent_allocator,
+                            .button_pressed => |idx| std.fmt.bufPrint(
+                                &self.last_result_buf,
                                 "Button {d} pressed",
                                 .{idx},
                             ) catch "Button pressed",
