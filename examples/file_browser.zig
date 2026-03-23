@@ -6,7 +6,7 @@ const zz = @import("zigzag");
 
 const Model = struct {
     file_picker: zz.components.FilePicker,
-    preview: []const u8,
+    preview: std.array_list.Managed(u8),
     error_message: []const u8,
 
     pub const Msg = union(enum) {
@@ -22,7 +22,7 @@ const Model = struct {
             self.file_picker.navigate("/") catch {};
         };
 
-        self.preview = "";
+        self.preview = std.array_list.Managed(u8).init(ctx.persistent_allocator);
         self.error_message = "";
         return .none;
     }
@@ -36,7 +36,7 @@ const Model = struct {
                         else => {
                             const selected = self.file_picker.handleKey(k) catch false;
                             if (selected) {
-                                self.loadPreview(ctx.allocator);
+                                self.loadPreview();
                             }
                         },
                     },
@@ -44,7 +44,7 @@ const Model = struct {
                     else => {
                         const selected = self.file_picker.handleKey(k) catch false;
                         if (selected) {
-                            self.loadPreview(ctx.allocator);
+                            self.loadPreview();
                         }
                     },
                 }
@@ -56,12 +56,12 @@ const Model = struct {
         return .none;
     }
 
-    fn loadPreview(self: *Model, allocator: std.mem.Allocator) void {
+    fn loadPreview(self: *Model) void {
         if (self.file_picker.getSelected()) |path| {
             // Try to read file preview
             const file = std.fs.openFileAbsolute(path, .{}) catch {
                 self.error_message = "Cannot open file";
-                self.preview = "";
+                self.preview.clearRetainingCapacity();
                 return;
             };
             defer file.close();
@@ -70,11 +70,16 @@ const Model = struct {
             var buf: [500]u8 = undefined;
             const bytes_read = file.read(&buf) catch {
                 self.error_message = "Cannot read file";
-                self.preview = "";
+                self.preview.clearRetainingCapacity();
                 return;
             };
 
-            self.preview = allocator.dupe(u8, buf[0..bytes_read]) catch "";
+            self.preview.clearRetainingCapacity();
+            self.preview.appendSlice(buf[0..bytes_read]) catch {
+                self.error_message = "Out of memory";
+                self.preview.clearRetainingCapacity();
+                return;
+            };
             self.error_message = "";
         }
     }
@@ -102,8 +107,8 @@ const Model = struct {
             preview_style = preview_style.borderAll(zz.Border.normal);
             preview_style = preview_style.borderForeground(zz.Color.gray(12));
 
-            const preview_content = if (self.preview.len > 0)
-                self.preview
+            const preview_content = if (self.preview.items.len > 0)
+                self.preview.items
             else if (self.error_message.len > 0)
                 self.error_message
             else
@@ -156,6 +161,7 @@ const Model = struct {
 
     pub fn deinit(self: *Model) void {
         self.file_picker.deinit();
+        self.preview.deinit();
     }
 };
 
