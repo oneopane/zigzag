@@ -140,6 +140,10 @@ pub const components = struct {
     pub const CheckboxGroup = checkbox.CheckboxGroup;
     pub const RadioGroup = @import("components/radio_group.zig").RadioGroup;
     pub const Dropdown = @import("components/dropdown.zig").Dropdown;
+    pub const toast = @import("components/toast.zig");
+    pub const Toast = toast.Toast;
+    pub const ToastPosition = toast.Position;
+    pub const ToastLevel = toast.Level;
 };
 
 // Re-export commonly used components at top level
@@ -168,6 +172,9 @@ pub const Checkbox = components.Checkbox;
 pub const CheckboxGroup = components.CheckboxGroup;
 pub const RadioGroup = components.RadioGroup;
 pub const Dropdown = components.Dropdown;
+pub const Toast = components.Toast;
+pub const ToastPosition = components.ToastPosition;
+pub const ToastLevel = components.ToastLevel;
 
 // Focus management
 pub const FocusGroup = components.focus.FocusGroup;
