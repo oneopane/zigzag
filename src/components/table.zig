@@ -255,25 +255,24 @@ pub fn Table(comptime num_cols: usize) type {
         /// Render the table
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             const widths = self.calculateWidths();
 
             // Top border
             if (self.show_border) {
-                try self.writeBorderLine(writer, allocator, widths, .top);
-                try writer.writeByte('\n');
+                try self.writeBorderLine(&result, allocator, widths, .top);
+                try result.append('\n');
             }
 
             // Header
             if (self.show_header) {
-                try self.writeRow(writer, allocator, self.headers, widths, self.header_style);
-                try writer.writeByte('\n');
+                try self.writeRow(&result, allocator, self.headers, widths, self.header_style);
+                try result.append('\n');
 
                 // Header separator
                 if (self.show_border) {
-                    try self.writeBorderLine(writer, allocator, widths, .middle);
-                    try writer.writeByte('\n');
+                    try self.writeBorderLine(&result, allocator, widths, .middle);
+                    try result.append('\n');
                 }
             }
 
@@ -301,21 +300,21 @@ pub fn Table(comptime num_cols: usize) type {
                 else
                     self.cell_style;
 
-                try self.writeRow(writer, allocator, row, widths, row_style);
+                try self.writeRow(&result, allocator, row, widths, row_style);
                 if (row_idx < end_row - 1 or self.show_border) {
-                    try writer.writeByte('\n');
+                    try result.append('\n');
                 }
 
                 // Row borders between data rows
                 if (self.show_row_borders and row_idx < end_row - 1) {
-                    try self.writeBorderLine(writer, allocator, widths, .middle);
-                    try writer.writeByte('\n');
+                    try self.writeBorderLine(&result, allocator, widths, .middle);
+                    try result.append('\n');
                 }
             }
 
             // Bottom border
             if (self.show_border) {
-                try self.writeBorderLine(writer, allocator, widths, .bottom);
+                try self.writeBorderLine(&result, allocator, widths, .bottom);
             }
 
             return result.toOwnedSlice();
@@ -323,7 +322,7 @@ pub fn Table(comptime num_cols: usize) type {
 
         fn writeRow(
             self: *const Self,
-            writer: anytype,
+            result: *std.array_list.Managed(u8),
             allocator: std.mem.Allocator,
             row: [num_cols][]const u8,
             widths: [num_cols]usize,
@@ -331,16 +330,16 @@ pub fn Table(comptime num_cols: usize) type {
         ) !void {
             if (self.show_border) {
                 const border_rendered = try self.border_style.render(allocator, self.border_chars.vertical);
-                try writer.writeAll(border_rendered);
+                try result.appendSlice(border_rendered);
             }
 
             for (0..num_cols) |i| {
                 if (i > 0 and self.show_border) {
                     const border_rendered = try self.border_style.render(allocator, self.border_chars.vertical);
-                    try writer.writeAll(border_rendered);
+                    try result.appendSlice(border_rendered);
                 }
 
-                try writer.writeByte(' ');
+                try result.append(' ');
 
                 const cell = row[i];
                 const width = widths[i];
@@ -350,30 +349,30 @@ pub fn Table(comptime num_cols: usize) type {
                 switch (self.col_aligns[i]) {
                     .left => {
                         const styled = try row_style.render(allocator, cell);
-                        try writer.writeAll(styled);
-                        for (0..padding) |_| try writer.writeByte(' ');
+                        try result.appendSlice(styled);
+                        for (0..padding) |_| try result.append(' ');
                     },
                     .center => {
                         const left_pad = padding / 2;
                         const right_pad = padding - left_pad;
-                        for (0..left_pad) |_| try writer.writeByte(' ');
+                        for (0..left_pad) |_| try result.append(' ');
                         const styled = try row_style.render(allocator, cell);
-                        try writer.writeAll(styled);
-                        for (0..right_pad) |_| try writer.writeByte(' ');
+                        try result.appendSlice(styled);
+                        for (0..right_pad) |_| try result.append(' ');
                     },
                     .right => {
-                        for (0..padding) |_| try writer.writeByte(' ');
+                        for (0..padding) |_| try result.append(' ');
                         const styled = try row_style.render(allocator, cell);
-                        try writer.writeAll(styled);
+                        try result.appendSlice(styled);
                     },
                 }
 
-                try writer.writeByte(' ');
+                try result.append(' ');
             }
 
             if (self.show_border) {
                 const border_rendered = try self.border_style.render(allocator, self.border_chars.vertical);
-                try writer.writeAll(border_rendered);
+                try result.appendSlice(border_rendered);
             }
         }
 
@@ -381,7 +380,7 @@ pub fn Table(comptime num_cols: usize) type {
 
         fn writeBorderLine(
             self: *const Self,
-            writer: anytype,
+            result: *std.array_list.Managed(u8),
             allocator: std.mem.Allocator,
             widths: [num_cols]usize,
             pos: BorderPosition,
@@ -403,22 +402,22 @@ pub fn Table(comptime num_cols: usize) type {
             };
 
             const left_styled = try self.border_style.render(allocator, left);
-            try writer.writeAll(left_styled);
+            try result.appendSlice(left_styled);
 
             for (0..num_cols) |i| {
                 if (i > 0) {
                     const mid_styled = try self.border_style.render(allocator, mid);
-                    try writer.writeAll(mid_styled);
+                    try result.appendSlice(mid_styled);
                 }
 
                 const h_styled = try self.border_style.render(allocator, self.border_chars.horizontal);
                 for (0..widths[i] + 2) |_| {
-                    try writer.writeAll(h_styled);
+                    try result.appendSlice(h_styled);
                 }
             }
 
             const right_styled = try self.border_style.render(allocator, right);
-            try writer.writeAll(right_styled);
+            try result.appendSlice(right_styled);
         }
     };
 }

@@ -356,18 +356,17 @@ pub const FilePicker = struct {
     /// Render the file picker
     pub fn view(self: *const FilePicker, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Current path header
         const path_styled = try self.path_style.render(allocator, self.current_path.items);
-        try writer.writeAll(path_styled);
-        try writer.writeByte('\n');
-        try writer.writeByte('\n');
+        try result.appendSlice(path_styled);
+        try result.append('\n');
+        try result.append('\n');
 
         // Entries
         var rendered: usize = 0;
         while (rendered < self.height -| 2) : (rendered += 1) {
-            if (rendered > 0) try writer.writeByte('\n');
+            if (rendered > 0) try result.append('\n');
 
             const idx = self.y_offset + rendered;
             if (idx >= self.entries.items.len) continue;
@@ -377,9 +376,9 @@ pub const FilePicker = struct {
 
             // Cursor indicator
             if (is_selected) {
-                try writer.writeAll("> ");
+                try result.appendSlice("> ");
             } else {
-                try writer.writeAll("  ");
+                try result.appendSlice("  ");
             }
 
             // Icon
@@ -389,7 +388,7 @@ pub const FilePicker = struct {
                 .symlink => self.link_icon,
                 .file => self.file_icon,
             };
-            try writer.writeAll(icon);
+            try result.appendSlice(icon);
 
             // Name
             const name_style = if (is_selected)
@@ -399,14 +398,14 @@ pub const FilePicker = struct {
                 else => self.file_style,
             };
             const name_styled = try name_style.render(allocator, entry.name);
-            try writer.writeAll(name_styled);
+            try result.appendSlice(name_styled);
 
             // Size (for files)
             if (self.show_size and entry.entry_type == .file) {
                 const size_str = try self.formatSize(allocator, entry.size);
-                try writer.writeAll("  ");
+                try result.appendSlice("  ");
                 const size_styled = try self.size_style.render(allocator, size_str);
-                try writer.writeAll(size_styled);
+                try result.appendSlice(size_styled);
             }
         }
 

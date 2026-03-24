@@ -460,14 +460,13 @@ pub fn List(comptime T: type) type {
         /// Render the list
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             // Filter line
             if (self.filter_enabled) {
                 const filter_line = try std.fmt.allocPrint(allocator, "Filter: {s}", .{self.filter_text.items});
                 const styled = try self.filter_style.render(allocator, filter_line);
-                try writer.writeAll(styled);
-                try writer.writeByte('\n');
+                try result.appendSlice(styled);
+                try result.append('\n');
             }
 
             const visible = self.visibleItems();
@@ -475,7 +474,7 @@ pub fn List(comptime T: type) type {
             // Render visible items
             var rendered: usize = 0;
             while (rendered < self.height) : (rendered += 1) {
-                if (rendered > 0) try writer.writeByte('\n');
+                if (rendered > 0) try result.append('\n');
 
                 const idx = self.y_offset + rendered;
                 if (idx < visible.len) {
@@ -485,10 +484,10 @@ pub fn List(comptime T: type) type {
                     // Cursor
                     if (idx == self.cursor) {
                         const cursor_styled = try self.cursor_style.render(allocator, self.cursor_symbol);
-                        try writer.writeAll(cursor_styled);
+                        try result.appendSlice(cursor_styled);
                     } else {
                         for (0..self.cursor_symbol.len) |_| {
-                            try writer.writeByte(' ');
+                            try result.append(' ');
                         }
                     }
 
@@ -496,9 +495,9 @@ pub fn List(comptime T: type) type {
                     if (self.multi_select) {
                         if (self.selected.contains(item_idx)) {
                             const sel_styled = try self.selected_style.render(allocator, self.selected_symbol);
-                            try writer.writeAll(sel_styled);
+                            try result.appendSlice(sel_styled);
                         } else {
-                            try writer.writeAll(self.unselected_symbol);
+                            try result.appendSlice(self.unselected_symbol);
                         }
                     }
 
@@ -510,30 +509,30 @@ pub fn List(comptime T: type) type {
                     else
                         try self.item_style.render(allocator, item.title);
 
-                    try writer.writeAll(item_rendered);
+                    try result.appendSlice(item_rendered);
 
                     // Description
                     if (item.description.len > 0) {
-                        try writer.writeAll(" - ");
-                        try writer.writeAll(item.description);
+                        try result.appendSlice(" - ");
+                        try result.appendSlice(item.description);
                     }
                 }
             }
 
             // Status bar
             if (self.show_item_count or self.status_message != null) {
-                try writer.writeAll("\n");
+                try result.append('\n');
                 if (self.show_item_count) {
                     const count_str = try std.fmt.allocPrint(allocator, "{d}/{d} items", .{
                         visible.len,
                         self.items.items.len,
                     });
                     const count_styled = try self.filter_style.render(allocator, count_str);
-                    try writer.writeAll(count_styled);
+                    try result.appendSlice(count_styled);
                 }
                 if (self.status_message) |msg| {
-                    if (self.show_item_count) try writer.writeAll(" ");
-                    try writer.writeAll(msg);
+                    if (self.show_item_count) try result.append(' ');
+                    try result.appendSlice(msg);
                 }
             }
 

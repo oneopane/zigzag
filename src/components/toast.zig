@@ -193,7 +193,6 @@ pub const Toast = struct {
         }
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const visible_count = @min(self.messages.items.len, self.max_visible);
 
@@ -218,22 +217,22 @@ pub const Toast = struct {
         }
 
         for (indices.items, 0..) |idx, render_idx| {
-            if (render_idx > 0) try writer.writeByte('\n');
+            if (render_idx > 0) try result.append('\n');
 
             const msg = self.messages.items[idx];
             const toast_str = try self.renderSingleToast(allocator, msg, current_ns);
-            try writer.writeAll(toast_str);
+            try result.appendSlice(toast_str);
         }
 
         // Show overflow indicator
         if (total > self.max_visible) {
-            try writer.writeByte('\n');
+            try result.append('\n');
             const overflow_text = try std.fmt.allocPrint(allocator, "  +{d} more", .{total - self.max_visible});
             var dim_style = style_mod.Style{};
             dim_style = dim_style.fg(Color.gray(10));
             dim_style = dim_style.inline_style(true);
             const styled = try dim_style.render(allocator, overflow_text);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
         }
 
         return result.toOwnedSlice();
@@ -269,7 +268,6 @@ pub const Toast = struct {
         const active_style = self.styleForLevel(msg.level);
 
         var line = std.array_list.Managed(u8).init(allocator);
-        const lw = line.writer();
 
         // Icon
         if (self.show_icons) {
@@ -280,12 +278,12 @@ pub const Toast = struct {
                 .err => self.err_icon,
             };
             const styled_icon = try active_style.render(allocator, icon);
-            try lw.writeAll(styled_icon);
+            try line.appendSlice(styled_icon);
         }
 
         // Text
         const styled_text = try active_style.render(allocator, msg.text);
-        try lw.writeAll(styled_text);
+        try line.appendSlice(styled_text);
 
         // Countdown
         if (self.show_countdown and msg.duration_ms > 0) {
@@ -297,7 +295,7 @@ pub const Toast = struct {
             dim_style = dim_style.fg(Color.gray(10));
             dim_style = dim_style.inline_style(true);
             const styled_cd = try dim_style.render(allocator, countdown);
-            try lw.writeAll(styled_cd);
+            try line.appendSlice(styled_cd);
         }
 
         const line_content = try line.toOwnedSlice();

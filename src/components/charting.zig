@@ -180,12 +180,11 @@ pub const CellBuffer = struct {
 
     pub fn render(self: *const CellBuffer, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         var glyph_buf: [4]u8 = undefined;
 
         for (0..self.height) |y| {
-            if (y > 0) try writer.writeByte('\n');
+            if (y > 0) try result.append('\n');
 
             for (0..self.width) |x| {
                 const cell = self.cells[self.index(x, y)];
@@ -201,9 +200,9 @@ pub const CellBuffer = struct {
                     var inline_style = base_style.inline_style(true);
                     const rendered = try inline_style.render(allocator, glyph);
                     defer allocator.free(rendered);
-                    try writer.writeAll(rendered);
+                    try result.appendSlice(rendered);
                 } else {
-                    try writer.writeAll(glyph);
+                    try result.appendSlice(glyph);
                 }
             }
         }

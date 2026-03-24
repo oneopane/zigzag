@@ -378,12 +378,11 @@ pub const TextInput = struct {
     /// Render the input to a string
     pub fn view(self: *const TextInput, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Write prompt
         if (self.prompt.len > 0) {
             const rendered_prompt = try self.prompt_style.render(allocator, self.prompt);
-            try writer.writeAll(rendered_prompt);
+            try result.appendSlice(rendered_prompt);
         }
 
         // Get display text
@@ -391,7 +390,7 @@ pub const TextInput = struct {
             // Show placeholder
             if (self.placeholder.len > 0) {
                 const rendered = try self.placeholder_style.render(allocator, self.placeholder);
-                try writer.writeAll(rendered);
+                try result.appendSlice(rendered);
             }
         } else {
             // Show value (possibly masked)
@@ -399,10 +398,10 @@ pub const TextInput = struct {
                 .normal => {
                     // Render with cursor
                     if (self.focused) {
-                        try self.renderWithCursor(writer, allocator);
+                        try self.renderWithCursor(&result, allocator);
                     } else {
                         const rendered = try self.text_style.render(allocator, self.value.items);
-                        try writer.writeAll(rendered);
+                        try result.appendSlice(rendered);
                     }
                 },
                 .password => {
@@ -411,7 +410,7 @@ pub const TextInput = struct {
                     const masked = try allocator.alloc(u8, char_count);
                     @memset(masked, '*');
                     const rendered = try self.text_style.render(allocator, masked);
-                    try writer.writeAll(rendered);
+                    try result.appendSlice(rendered);
                 },
                 .none => {
                     // Show nothing
@@ -422,11 +421,11 @@ pub const TextInput = struct {
         return result.toOwnedSlice();
     }
 
-    fn renderWithCursor(self: *const TextInput, writer: anytype, allocator: std.mem.Allocator) !void {
+    fn renderWithCursor(self: *const TextInput, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator) !void {
         // Text before cursor
         if (self.cursor > 0) {
             const before = try self.text_style.render(allocator, self.value.items[0..self.cursor]);
-            try writer.writeAll(before);
+            try result.appendSlice(before);
         }
 
         // Cursor character
@@ -434,17 +433,17 @@ pub const TextInput = struct {
             const byte_len = std.unicode.utf8ByteSequenceLength(self.value.items[self.cursor]) catch 1;
             const cursor_char = self.value.items[self.cursor..][0..byte_len];
             const cursor_rendered = try self.cursor_style.render(allocator, cursor_char);
-            try writer.writeAll(cursor_rendered);
+            try result.appendSlice(cursor_rendered);
 
             // Text after cursor
             if (self.cursor + byte_len < self.value.items.len) {
                 const after = try self.text_style.render(allocator, self.value.items[self.cursor + byte_len ..]);
-                try writer.writeAll(after);
+                try result.appendSlice(after);
             }
         } else {
             // Cursor at end - show cursor on space
             const cursor_rendered = try self.cursor_style.render(allocator, " ");
-            try writer.writeAll(cursor_rendered);
+            try result.appendSlice(cursor_rendered);
         }
 
         // Show ghost text for current suggestion
@@ -453,7 +452,7 @@ pub const TextInput = struct {
                 if (suggestion.len > self.value.items.len) {
                     const ghost = suggestion[self.value.items.len..];
                     const ghost_rendered = try self.suggestion_style.render(allocator, ghost);
-                    try writer.writeAll(ghost_rendered);
+                    try result.appendSlice(ghost_rendered);
                 }
             }
         }

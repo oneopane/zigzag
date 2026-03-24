@@ -122,7 +122,7 @@ These are the working assumptions for the migration unless explicitly revisited.
 
 Snapshot date: 2026-03-24
 
-Completed in the current working copy:
+Completed so far on this branch:
 - added the migration reference docs:
   - `docs/zig-0.16-migration-inventory.md`
   - `docs/zig-0.16-migration-plan.md`
@@ -152,17 +152,26 @@ Completed in the current working copy:
   - `src/components/timer.zig`
   - `src/components/tree.zig`
   - `src/components/viewport.zig`
+- completed the third C2 batch (Phase 1C / Group C):
+  - `src/components/charting.zig`
+  - `src/components/file_picker.zig`
+  - `src/components/list.zig`
+  - `src/components/markdown.zig`
+  - `src/components/sparkline.zig`
+  - `src/components/table.zig`
+  - `src/components/text_input.zig`
+  - `src/components/toast.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
 - `zig build test` → still fails, but the failure frontier has moved forward to:
-  - remaining C2 component renderers in Phases 1C–1D
-  - C4 time migration in `src/core/program.zig`
-  - C5 formatter migration in `src/input/keys.zig` and `src/input/mouse.zig`
+  - remaining C2 component renderers in Phase 1D / Group D
+  - C5 formatter migration now surfacing in `src/input/keys.zig` (with `src/input/mouse.zig` still tracked in the migration plan)
+  - C4 time migration in `src/core/program.zig` still pending after the renderer/formatter frontiers clear
 
 Immediate next step:
-- continue with the remaining C2 component sweeps in Group C before circling back to Group D, C4, and C5
+- start Phase 1D / Group D, then return to C5 and C4
 
 ---
 
@@ -551,7 +560,7 @@ Type: **semi-mechanical with review**
 - [x] Use direct `Managed(u8)` list methods by default
 - [x] Convert foundational layout/style files first
 - [x] Convert simple component renderers next
-- [ ] Convert medium-complexity renderers
+- [x] Convert medium-complexity renderers
 - [ ] Convert high-complexity nested renderers last
 - [x] Keep helper use narrow; current helpers remain local (`ListWriter` in `src/style/style.zig`, plus direct list recursion in `src/components/tree.zig`)
 - [x] Avoid changing container types unless forced
