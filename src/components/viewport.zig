@@ -270,13 +270,12 @@ pub const Viewport = struct {
 
     pub fn view(self: *const Viewport, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const visible_width = self.visibleWidth();
 
         var row: usize = 0;
         while (row < self.height) : (row += 1) {
-            if (row > 0) try writer.writeByte('\n');
+            if (row > 0) try result.append('\n');
 
             const line_text = try self.lineForVisualRow(allocator, self.y_offset + row, visible_width);
             defer allocator.free(line_text);
@@ -286,12 +285,12 @@ pub const Viewport = struct {
 
             const rendered = try self.viewport_style.render(allocator, padded);
             defer allocator.free(rendered);
-            try writer.writeAll(rendered);
+            try result.appendSlice(rendered);
 
             if (self.show_scrollbar and self.totalVisualLines() > self.height) {
                 const scrollbar = try self.renderScrollbar(allocator, row);
                 defer allocator.free(scrollbar);
-                try writer.writeAll(scrollbar);
+                try result.appendSlice(scrollbar);
             }
         }
 

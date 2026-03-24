@@ -99,7 +99,6 @@ pub const Checkbox = struct {
 
     pub fn view(self: *const Checkbox, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const symbol = if (self.checked) self.checked_symbol else self.unchecked_symbol;
         const sym_style = if (!self.enabled)
@@ -110,7 +109,7 @@ pub const Checkbox = struct {
             self.unchecked_style;
 
         const styled_symbol = try sym_style.render(allocator, symbol);
-        try writer.writeAll(styled_symbol);
+        try result.appendSlice(styled_symbol);
 
         const lbl_style = if (!self.enabled)
             self.disabled_style
@@ -120,7 +119,7 @@ pub const Checkbox = struct {
             self.label_style;
 
         const styled_label = try lbl_style.render(allocator, self.label);
-        try writer.writeAll(styled_label);
+        try result.appendSlice(styled_label);
 
         return result.toOwnedSlice();
     }
@@ -376,11 +375,10 @@ pub fn CheckboxGroup(comptime T: type) type {
 
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             var rendered: usize = 0;
             while (rendered < self.height) : (rendered += 1) {
-                if (rendered > 0) try writer.writeByte('\n');
+                if (rendered > 0) try result.append('\n');
 
                 const idx = self.y_offset + rendered;
                 if (idx >= self.items.items.len) break;
@@ -390,10 +388,10 @@ pub fn CheckboxGroup(comptime T: type) type {
                 // Cursor
                 if (idx == self.cursor and self.focused) {
                     const styled = try self.cursor_style.render(allocator, self.cursor_symbol);
-                    try writer.writeAll(styled);
+                    try result.appendSlice(styled);
                 } else {
                     for (0..self.cursor_symbol.len) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 }
 
@@ -406,7 +404,7 @@ pub fn CheckboxGroup(comptime T: type) type {
                 else
                     self.item_style;
                 const styled_check = try check_s.render(allocator, check_sym);
-                try writer.writeAll(styled_check);
+                try result.appendSlice(styled_check);
 
                 // Label
                 const lbl_style = if (!item.enabled)
@@ -418,12 +416,12 @@ pub fn CheckboxGroup(comptime T: type) type {
                 else
                     self.item_style;
                 const styled_label = try lbl_style.render(allocator, item.label);
-                try writer.writeAll(styled_label);
+                try result.appendSlice(styled_label);
 
                 // Description
                 if (item.description.len > 0) {
-                    try writer.writeAll(" - ");
-                    try writer.writeAll(item.description);
+                    try result.appendSlice(" - ");
+                    try result.appendSlice(item.description);
                 }
             }
 

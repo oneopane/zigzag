@@ -77,13 +77,12 @@ pub const StyledList = struct {
     /// Render the list
     pub fn view(self: *const StyledList, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Track counters per depth level
         var counters: [16]usize = .{0} ** 16;
 
         for (self.items.items, 0..) |item, i| {
-            if (i > 0) try writer.writeAll("\n");
+            if (i > 0) try result.appendSlice("\n");
 
             // Reset deeper counters when going to a shallower depth
             const depth = @min(item.depth, 15);
@@ -94,18 +93,18 @@ pub const StyledList = struct {
 
             // Indent
             for (0..depth) |_| {
-                try writer.writeAll("  ");
+                try result.appendSlice("  ");
             }
 
             // Enumerator
             const enum_str = try self.formatEnumerator(allocator, counters[depth]);
             const styled_enum = try self.enumerator_style.render(allocator, enum_str);
-            try writer.writeAll(styled_enum);
+            try result.appendSlice(styled_enum);
 
             // Item text
             const active_style = item.style_override orelse self.item_style;
             const styled_text = try active_style.render(allocator, item.text);
-            try writer.writeAll(styled_text);
+            try result.appendSlice(styled_text);
         }
 
         return result.toOwnedSlice();

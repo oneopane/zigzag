@@ -118,7 +118,6 @@ pub const Help = struct {
         }
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         var total_width: usize = 0;
 
@@ -139,9 +138,9 @@ pub const Help = struct {
                     // Add ellipsis and stop
                     if (i > 0) {
                         const sep_styled = try self.sep_style.render(allocator, self.separator);
-                        try writer.writeAll(sep_styled);
+                        try result.appendSlice(sep_styled);
                     }
-                    try writer.writeAll(self.ellipsis);
+                    try result.appendSlice(self.ellipsis);
                     break;
                 }
             }
@@ -149,18 +148,18 @@ pub const Help = struct {
             // Add separator
             if (i > 0) {
                 const sep_styled = try self.sep_style.render(allocator, self.separator);
-                try writer.writeAll(sep_styled);
+                try result.appendSlice(sep_styled);
                 total_width += measure.width(self.separator);
             }
 
             // Add key
             const key_styled = try self.key_style.render(allocator, binding.key);
-            try writer.writeAll(key_styled);
+            try result.appendSlice(key_styled);
 
             // Add description
-            try writer.writeByte(' ');
+            try result.append(' ');
             const desc_styled = try self.desc_style.render(allocator, desc);
-            try writer.writeAll(desc_styled);
+            try result.appendSlice(desc_styled);
 
             total_width += binding_width;
         }
@@ -181,18 +180,17 @@ pub const Help = struct {
         }
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         for (self.bindings.items, 0..) |binding, i| {
-            if (i > 0) try writer.writeByte('\n');
+            if (i > 0) try result.append('\n');
 
             // Key with padding
             const key_styled = try self.key_style.render(allocator, binding.key);
-            try writer.writeAll(key_styled);
+            try result.appendSlice(key_styled);
 
             const key_width = measure.width(binding.key);
             for (0..(max_key_width - key_width + 2)) |_| {
-                try writer.writeByte(' ');
+                try result.append(' ');
             }
 
             // Description
@@ -201,7 +199,7 @@ pub const Help = struct {
             else
                 binding.description;
             const desc_styled = try self.desc_style.render(allocator, desc);
-            try writer.writeAll(desc_styled);
+            try result.appendSlice(desc_styled);
         }
 
         return result.toOwnedSlice();

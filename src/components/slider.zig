@@ -171,20 +171,19 @@ pub const Slider = struct {
 
     pub fn view(self: *const Slider, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Label
         if (self.label.len > 0) {
             const styled = try self.label_style.render(allocator, self.label);
-            try writer.writeAll(styled);
-            try writer.writeAll(" ");
+            try result.appendSlice(styled);
+            try result.appendSlice(" ");
         }
 
         // Bounds (left)
         if (self.show_bounds) {
             const min_str = try self.formatValue(allocator, self.min);
-            try writer.writeAll(min_str);
-            try writer.writeAll(" ");
+            try result.appendSlice(min_str);
+            try result.appendSlice(" ");
         }
 
         // Track
@@ -197,7 +196,7 @@ pub const Slider = struct {
             if (i == thumb_pos) {
                 // Thumb
                 const styled = try self.thumb_style.render(allocator, self.thumb_char);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else if (i < thumb_pos) {
                 // Filled portion
                 if (self.gradient_start != null and self.gradient_end != null and thumb_pos > 0) {
@@ -207,38 +206,38 @@ pub const Slider = struct {
                     grad_style = grad_style.fg(col);
                     grad_style = grad_style.inline_style(true);
                     const styled = try grad_style.render(allocator, self.filled_char);
-                    try writer.writeAll(styled);
+                    try result.appendSlice(styled);
                 } else {
                     const styled = try self.filled_style.render(allocator, self.filled_char);
-                    try writer.writeAll(styled);
+                    try result.appendSlice(styled);
                 }
             } else {
                 // Empty track
                 const styled = try self.track_style.render(allocator, self.track_char);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
         }
 
         // Bounds (right)
         if (self.show_bounds) {
-            try writer.writeAll(" ");
+            try result.appendSlice(" ");
             const max_str = try self.formatValue(allocator, self.max);
-            try writer.writeAll(max_str);
+            try result.appendSlice(max_str);
         }
 
         // Value display
         if (self.show_value) {
-            try writer.writeAll(" ");
+            try result.appendSlice(" ");
             const val_str = try self.formatValue(allocator, self.value);
             const styled = try self.value_style.render(allocator, val_str);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
         }
 
         // Percentage
         if (self.show_percent) {
             const pct = self.percent();
             const pct_str = try std.fmt.allocPrint(allocator, " ({d:.0}%)", .{pct});
-            try writer.writeAll(pct_str);
+            try result.appendSlice(pct_str);
         }
 
         return result.toOwnedSlice();

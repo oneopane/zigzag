@@ -98,12 +98,11 @@ pub const Spinner = struct {
     /// Render spinner with title
     pub fn viewWithTitle(self: *const Spinner, allocator: std.mem.Allocator, title: []const u8) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const rendered_spinner = try self.view(allocator);
-        try writer.writeAll(rendered_spinner);
-        try writer.writeByte(' ');
-        try writer.writeAll(title);
+        try result.appendSlice(rendered_spinner);
+        try result.append(' ');
+        try result.appendSlice(title);
 
         return result.toOwnedSlice();
     }

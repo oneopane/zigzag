@@ -217,11 +217,10 @@ pub fn RadioGroup(comptime T: type) type {
 
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             var rendered: usize = 0;
             while (rendered < self.height) : (rendered += 1) {
-                if (rendered > 0) try writer.writeByte('\n');
+                if (rendered > 0) try result.append('\n');
 
                 const idx = self.y_offset + rendered;
                 if (idx >= self.items.items.len) break;
@@ -232,10 +231,10 @@ pub fn RadioGroup(comptime T: type) type {
                 // Cursor
                 if (idx == self.cursor and self.focused) {
                     const styled = try self.cursor_style.render(allocator, self.cursor_symbol);
-                    try writer.writeAll(styled);
+                    try result.appendSlice(styled);
                 } else {
                     for (0..self.cursor_symbol.len) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 }
 
@@ -248,7 +247,7 @@ pub fn RadioGroup(comptime T: type) type {
                 else
                     self.item_style;
                 const styled_radio = try radio_s.render(allocator, radio_sym);
-                try writer.writeAll(styled_radio);
+                try result.appendSlice(styled_radio);
 
                 // Label
                 const lbl_style = if (!item.enabled)
@@ -260,12 +259,12 @@ pub fn RadioGroup(comptime T: type) type {
                 else
                     self.item_style;
                 const styled_label = try lbl_style.render(allocator, item.label);
-                try writer.writeAll(styled_label);
+                try result.appendSlice(styled_label);
 
                 // Description
                 if (item.description.len > 0) {
-                    try writer.writeAll(" - ");
-                    try writer.writeAll(item.description);
+                    try result.appendSlice(" - ");
+                    try result.appendSlice(item.description);
                 }
             }
 

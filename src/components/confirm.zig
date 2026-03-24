@@ -119,33 +119,32 @@ pub const Confirm = struct {
         }
 
         var result_buf = std.array_list.Managed(u8).init(allocator);
-        const writer = result_buf.writer();
 
         // Prompt
         const styled_prompt = try self.prompt_style.render(allocator, self.prompt_text);
-        try writer.writeAll(styled_prompt);
-        try writer.writeAll(" ");
+        try result_buf.appendSlice(styled_prompt);
+        try result_buf.appendSlice(" ");
 
         // Yes option
         const yes_style = if (self.selected == .yes) self.active_style else self.inactive_style;
         if (self.selected == .yes) {
             const styled = try yes_style.render(allocator, "[Yes]");
-            try writer.writeAll(styled);
+            try result_buf.appendSlice(styled);
         } else {
             const styled = try yes_style.render(allocator, " Yes ");
-            try writer.writeAll(styled);
+            try result_buf.appendSlice(styled);
         }
 
-        try writer.writeAll(" ");
+        try result_buf.appendSlice(" ");
 
         // No option
         const no_style = if (self.selected == .no) self.active_style else self.inactive_style;
         if (self.selected == .no) {
             const styled = try no_style.render(allocator, "[No]");
-            try writer.writeAll(styled);
+            try result_buf.appendSlice(styled);
         } else {
             const styled = try no_style.render(allocator, " No ");
-            try writer.writeAll(styled);
+            try result_buf.appendSlice(styled);
         }
 
         return result_buf.toOwnedSlice();

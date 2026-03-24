@@ -102,7 +102,6 @@ pub const Notification = struct {
         }
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const visible_count = @min(self.messages.items.len, self.max_visible);
         const start = if (self.messages.items.len > self.max_visible)
@@ -111,7 +110,7 @@ pub const Notification = struct {
             0;
 
         for (start..start + visible_count) |i| {
-            if (i > start) try writer.writeAll("\n");
+            if (i > start) try result.appendSlice("\n");
 
             const msg = self.messages.items[i];
             const icon = switch (msg.level) {
@@ -128,9 +127,9 @@ pub const Notification = struct {
             };
 
             const styled_icon = try active_style.render(allocator, icon);
-            try writer.writeAll(styled_icon);
+            try result.appendSlice(styled_icon);
             const styled_text = try active_style.render(allocator, msg.text);
-            try writer.writeAll(styled_text);
+            try result.appendSlice(styled_text);
         }
 
         return result.toOwnedSlice();

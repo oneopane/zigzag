@@ -198,7 +198,6 @@ pub const Timer = struct {
         };
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Choose style based on state
         const active_style = if (self.isDanger())
@@ -209,12 +208,12 @@ pub const Timer = struct {
             self.timer_style;
 
         const styled = try active_style.render(allocator, time_str);
-        try writer.writeAll(styled);
+        try result.appendSlice(styled);
 
         // Add milliseconds if enabled
         if (self.show_milliseconds) {
             const ms_str = try std.fmt.allocPrint(allocator, ".{d:0>3}", .{milliseconds});
-            try writer.writeAll(ms_str);
+            try result.appendSlice(ms_str);
         }
 
         return result.toOwnedSlice();

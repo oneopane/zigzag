@@ -154,17 +154,16 @@ pub const Paginator = struct {
 
     fn viewDots(self: *const Paginator, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         for (0..self.total_pages) |i| {
-            if (i > 0) try writer.writeByte(' ');
+            if (i > 0) try result.append(' ');
 
             if (i == self.current_page) {
                 const styled = try self.active_style.render(allocator, self.active_dot);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else {
                 const styled = try self.inactive_style.render(allocator, self.inactive_dot);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
         }
 
@@ -178,7 +177,6 @@ pub const Paginator = struct {
 
     fn viewCompact(self: *const Paginator, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // Show limited range of pages
         const max_visible = 5;
@@ -199,25 +197,25 @@ pub const Paginator = struct {
 
         // Previous indicator
         if (start > 0) {
-            try writer.writeAll("< ");
+            try result.appendSlice("< ");
         }
 
         for (start..end) |i| {
-            if (i > start) try writer.writeByte(' ');
+            if (i > start) try result.append(' ');
 
             const page_str = try std.fmt.allocPrint(allocator, "{d}", .{i + 1});
             if (i == self.current_page) {
                 const styled = try self.active_style.render(allocator, page_str);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else {
                 const styled = try self.inactive_style.render(allocator, page_str);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
         }
 
         // Next indicator
         if (end < self.total_pages) {
-            try writer.writeAll(" >");
+            try result.appendSlice(" >");
         }
 
         return result.toOwnedSlice();

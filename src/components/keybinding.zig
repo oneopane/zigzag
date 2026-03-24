@@ -24,20 +24,19 @@ pub const KeyBinding = struct {
     /// Get a display string for the key
     pub fn keyDisplay(self: *const KeyBinding, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
-        if (self.key_event.modifiers.ctrl) try writer.writeAll("ctrl+");
-        if (self.key_event.modifiers.alt) try writer.writeAll("alt+");
-        if (self.key_event.modifiers.shift) try writer.writeAll("shift+");
-        if (self.key_event.modifiers.super) try writer.writeAll("super+");
+        if (self.key_event.modifiers.ctrl) try result.appendSlice("ctrl+");
+        if (self.key_event.modifiers.alt) try result.appendSlice("alt+");
+        if (self.key_event.modifiers.shift) try result.appendSlice("shift+");
+        if (self.key_event.modifiers.super) try result.appendSlice("super+");
 
         switch (self.key_event.key) {
             .char => |c| {
                 var buf: [4]u8 = undefined;
                 const len = std.unicode.utf8Encode(c, &buf) catch 0;
-                try writer.writeAll(buf[0..len]);
+                try result.appendSlice(buf[0..len]);
             },
-            else => try writer.writeAll(self.key_event.key.name()),
+            else => try result.appendSlice(self.key_event.key.name()),
         }
 
         return result.toOwnedSlice();

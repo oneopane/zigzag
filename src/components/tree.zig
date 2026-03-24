@@ -122,11 +122,10 @@ pub fn Tree(comptime T: type) type {
         /// Render the tree
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             for (self.root_indices.items, 0..) |root_idx, i| {
-                if (i > 0) try writer.writeAll("\n");
-                try self.renderNode(writer, allocator, root_idx, "", true);
+                if (i > 0) try result.appendSlice("\n");
+                try self.renderNode(&result, allocator, root_idx, "", true);
             }
 
             return result.toOwnedSlice();
@@ -134,7 +133,7 @@ pub fn Tree(comptime T: type) type {
 
         fn renderNode(
             self: *const Self,
-            writer: anytype,
+            result: *std.array_list.Managed(u8),
             allocator: std.mem.Allocator,
             node_idx: usize,
             prefix: []const u8,
@@ -144,17 +143,17 @@ pub fn Tree(comptime T: type) type {
             const active_style = node.style_override orelse self.label_style;
 
             // Write prefix
-            try writer.writeAll(prefix);
+            try result.appendSlice(prefix);
 
             // Write label
             const styled_label = try active_style.render(allocator, node.label);
-            try writer.writeAll(styled_label);
+            try result.appendSlice(styled_label);
 
             // Render children if expanded
             if (node.expanded and node.children.items.len > 0) {
                 const children = node.children.items;
                 for (children, 0..) |child_idx, ci| {
-                    try writer.writeAll("\n");
+                    try result.appendSlice("\n");
                     const is_last = (ci == children.len - 1);
                     const connector = if (is_last) self.enumerator.last_prefix else self.enumerator.item_prefix;
                     const child_prefix = if (is_last) self.enumerator.empty_prefix else self.enumerator.indent_prefix;
@@ -175,7 +174,7 @@ pub fn Tree(comptime T: type) type {
                     try connector_prefix.appendSlice(connector);
                     const connector_str = try connector_prefix.toOwnedSlice();
 
-                    try self.renderNode(writer, allocator, child_idx, connector_str, false);
+                    try self.renderNode(result, allocator, child_idx, connector_str, false);
                     _ = new_prefix_str;
                 }
             }

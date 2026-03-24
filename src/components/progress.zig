@@ -134,7 +134,6 @@ pub const Progress = struct {
     /// Render the progress bar
     pub fn view(self: *const Progress, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const ratio = if (self.total > 0) self.current / self.total else 0;
         const filled_width = @as(usize, @intFromFloat(ratio * @as(f64, @floatFromInt(self.width))));
@@ -155,17 +154,17 @@ pub const Progress = struct {
                 grad_style = grad_style.fg(color);
                 grad_style = grad_style.inline_style(true);
                 const grad_styled = try grad_style.render(allocator, char);
-                try writer.writeAll(grad_styled);
+                try result.appendSlice(grad_styled);
             } else {
                 const full_styled = try self.full_style.render(allocator, char);
-                try writer.writeAll(full_styled);
+                try result.appendSlice(full_styled);
             }
         }
 
         // Empty portion
         for (0..empty_width) |_| {
             const empty_styled = try self.empty_style.render(allocator, self.empty_char);
-            try writer.writeAll(empty_styled);
+            try result.appendSlice(empty_styled);
         }
 
         // Percentage
@@ -173,7 +172,7 @@ pub const Progress = struct {
             const pct = self.percent();
             const pct_str = try std.fmt.allocPrint(allocator, " {d:.0}%", .{pct});
             const pct_styled = try self.percent_style.render(allocator, pct_str);
-            try writer.writeAll(pct_styled);
+            try result.appendSlice(pct_styled);
         }
 
         // Count
@@ -182,7 +181,7 @@ pub const Progress = struct {
                 @as(i64, @intFromFloat(self.current)),
                 @as(i64, @intFromFloat(self.total)),
             });
-            try writer.writeAll(count_str);
+            try result.appendSlice(count_str);
         }
 
         return result.toOwnedSlice();
@@ -191,13 +190,12 @@ pub const Progress = struct {
     /// Render with a label
     pub fn viewWithLabel(self: *const Progress, allocator: std.mem.Allocator, label: []const u8) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
-        try writer.writeAll(label);
-        try writer.writeAll(" ");
+        try result.appendSlice(label);
+        try result.appendSlice(" ");
 
         const bar = try self.view(allocator);
-        try writer.writeAll(bar);
+        try result.appendSlice(bar);
 
         return result.toOwnedSlice();
     }

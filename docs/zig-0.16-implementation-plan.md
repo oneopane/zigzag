@@ -137,17 +137,32 @@ Completed in the current working copy:
 - completed the C3 fixed-buffer writer migration in:
   - `src/terminal/ansi.zig`
   - `src/terminal/terminal.zig`
+- completed the second C2 batch (Phase 1B / Group B):
+  - `src/components/checkbox.zig`
+  - `src/components/confirm.zig`
+  - `src/components/help.zig`
+  - `src/components/keybinding.zig`
+  - `src/components/notification.zig`
+  - `src/components/paginator.zig`
+  - `src/components/progress.zig`
+  - `src/components/radio_group.zig`
+  - `src/components/slider.zig`
+  - `src/components/spinner.zig`
+  - `src/components/styled_list.zig`
+  - `src/components/timer.zig`
+  - `src/components/tree.zig`
+  - `src/components/viewport.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
-- `zig build test` → still fails, but the failures are now concentrated in:
-  - remaining C2 component renderers from Phases 1B–1D
+- `zig build test` → still fails, but the failure frontier has moved forward to:
+  - remaining C2 component renderers in Phases 1C–1D
   - C4 time migration in `src/core/program.zig`
   - C5 formatter migration in `src/input/keys.zig` and `src/input/mouse.zig`
 
 Immediate next step:
-- continue the remaining C2 component sweeps before circling back to C4/C5
+- continue with the remaining C2 component sweeps in Group C before circling back to Group D, C4, and C5
 
 ---
 
@@ -535,12 +550,12 @@ Type: **semi-mechanical with review**
 
 - [x] Use direct `Managed(u8)` list methods by default
 - [x] Convert foundational layout/style files first
-- [ ] Convert simple component renderers next
+- [x] Convert simple component renderers next
 - [ ] Convert medium-complexity renderers
 - [ ] Convert high-complexity nested renderers last
-- [x] Keep helper use narrow; current helper is the local `ListWriter` in `src/style/style.zig`
+- [x] Keep helper use narrow; current helpers remain local (`ListWriter` in `src/style/style.zig`, plus direct list recursion in `src/components/tree.zig`)
 - [x] Avoid changing container types unless forced
-- [x] Re-run `zig test src/root.zig` after the current foundational batch
+- [x] Re-run `zig test src/root.zig` after the current foundational/simple-component batches
 - [x] Search for leftover broken `Managed(...).writer()` sites to define the next batches
 
 ## C3 checklist — fixed-buffer stream migration
