@@ -27,6 +27,10 @@ pub fn build(b: *std.Build) void {
         "tabs",
         "clipboard_osc52",
         "theming",
+        "slider",
+        "menu_bar",
+        "checkbox_radio",
+        "dropdown",
     };
 
     for (examples) |example_name| {
@@ -70,6 +74,10 @@ pub fn build(b: *std.Build) void {
         "tests/chart_tests.zig",
         "tests/viewport_tests.zig",
         "tests/theme_tests.zig",
+        "tests/slider_tests.zig",
+        "tests/menu_bar_tests.zig",
+        "tests/checkbox_radio_tests.zig",
+        "tests/dropdown_tests.zig",
     };
 
     const test_step = b.step("test", "Run unit tests");
