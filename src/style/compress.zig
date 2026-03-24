@@ -110,7 +110,6 @@ pub const StyleState = struct {
 /// Strips consecutive resets and duplicate attribute settings.
 pub fn compressAnsi(allocator: std.mem.Allocator, input: []const u8) ![]const u8 {
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     var i: usize = 0;
     var last_was_reset = false;
@@ -134,18 +133,18 @@ pub fn compressAnsi(allocator: std.mem.Allocator, input: []const u8) ![]const u8
             // Check for reset sequence
             if (std.mem.eql(u8, seq, ansi.reset)) {
                 if (!last_was_reset) {
-                    try writer.writeAll(seq);
+                    try result.appendSlice(seq);
                     last_was_reset = true;
                 }
                 // Skip duplicate resets
             } else {
-                try writer.writeAll(seq);
+                try result.appendSlice(seq);
                 last_was_reset = false;
             }
 
             i = seq_end;
         } else {
-            try writer.writeByte(input[i]);
+            try result.append(input[i]);
             last_was_reset = false;
             i += 1;
         }

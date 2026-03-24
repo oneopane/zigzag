@@ -608,8 +608,7 @@ pub const Terminal = struct {
         if (!self.image_caps.kitty_graphics or image_data.len == 0) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.print("a=T,t=d,f={d}", .{@intFromEnum(options.format)});
         if (options.quiet) try params_writer.writeAll(",q=2");
@@ -623,7 +622,7 @@ pub const Terminal = struct {
         if (options.pixel_width) |pw| try params_writer.print(",s={d}", .{pw});
         if (options.pixel_height) |ph| try params_writer.print(",v={d}", .{ph});
 
-        try self.sendKittyGraphicsPayload(stream.getWritten(), image_data);
+        try self.sendKittyGraphicsPayload(params_writer.buffered(), image_data);
         return true;
     }
 
@@ -633,8 +632,7 @@ pub const Terminal = struct {
         if (!self.image_caps.kitty_graphics or path.len == 0) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.writeAll("a=T,t=f,f=100");
         if (options.quiet) try params_writer.writeAll(",q=2");
@@ -646,7 +644,7 @@ pub const Terminal = struct {
         if (options.z_index) |z| try params_writer.print(",z={d}", .{z});
         if (options.unicode_placeholder) try params_writer.writeAll(",U=1");
 
-        try self.sendKittyGraphicsPayload(stream.getWritten(), path);
+        try self.sendKittyGraphicsPayload(params_writer.buffered(), path);
         return true;
     }
 
@@ -656,8 +654,7 @@ pub const Terminal = struct {
         if (!self.image_caps.kitty_graphics or payload.len == 0) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.print("a=t,i={d}", .{options.image_id});
         if (options.quiet) try params_writer.writeAll(",q=2");
@@ -676,7 +673,7 @@ pub const Terminal = struct {
             },
         }
 
-        try self.sendKittyGraphicsPayload(stream.getWritten(), payload);
+        try self.sendKittyGraphicsPayload(params_writer.buffered(), payload);
         return true;
     }
 
@@ -686,13 +683,12 @@ pub const Terminal = struct {
         if (!fileExists(path)) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.print("a=t,t=f,f=100,i={d}", .{options.image_id});
         if (options.quiet) try params_writer.writeAll(",q=2");
 
-        try self.sendKittyGraphicsPayload(stream.getWritten(), path);
+        try self.sendKittyGraphicsPayload(params_writer.buffered(), path);
         return true;
     }
 
@@ -701,8 +697,7 @@ pub const Terminal = struct {
         if (!self.image_caps.kitty_graphics) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.print("a=p,i={d}", .{options.image_id});
         if (options.quiet) try params_writer.writeAll(",q=2");
@@ -714,7 +709,7 @@ pub const Terminal = struct {
         if (options.unicode_placeholder) try params_writer.writeAll(",U=1");
 
         // Virtual placement has no payload.
-        try ansi.kittyGraphics(self.writer(), stream.getWritten(), "");
+        try ansi.kittyGraphics(self.writer(), params_writer.buffered(), "");
         return true;
     }
 
@@ -723,8 +718,7 @@ pub const Terminal = struct {
         if (!self.image_caps.kitty_graphics) return false;
 
         var params_buf: [128]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.writeAll("a=d,q=2");
         switch (target) {
@@ -733,7 +727,7 @@ pub const Terminal = struct {
             .all => try params_writer.writeAll(",d=A"),
         }
 
-        try ansi.kittyGraphics(self.writer(), stream.getWritten(), "");
+        try ansi.kittyGraphics(self.writer(), params_writer.buffered(), "");
         return true;
     }
 
@@ -748,8 +742,7 @@ pub const Terminal = struct {
         const stat = try file.stat();
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.writeAll("inline=1");
         if (options.width_cells) |cols| try params_writer.print(";width={d}", .{cols});
@@ -765,7 +758,7 @@ pub const Terminal = struct {
             try params_writer.print(";name={s}", .{file_name_b64});
         }
 
-        try self.sendIterm2InlineImagePayload(stream.getWritten(), &file, stat.size);
+        try self.sendIterm2InlineImagePayload(params_writer.buffered(), &file, stat.size);
         return true;
     }
 
@@ -775,8 +768,7 @@ pub const Terminal = struct {
         if (!self.image_caps.iterm2_inline_image or data.len == 0) return false;
 
         var params_buf: [256]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&params_buf);
-        const params_writer = stream.writer();
+        var params_writer: std.Io.Writer = .fixed(&params_buf);
 
         try params_writer.writeAll("inline=1");
         if (options.width_cells) |cols| try params_writer.print(";width={d}", .{cols});
@@ -785,7 +777,7 @@ pub const Terminal = struct {
         if (!options.move_cursor) try params_writer.writeAll(";doNotMoveCursor=1");
         try params_writer.print(";size={d}", .{data.len});
 
-        try self.sendIterm2InlineImageDataPayload(stream.getWritten(), data);
+        try self.sendIterm2InlineImageDataPayload(params_writer.buffered(), data);
         return true;
     }
 

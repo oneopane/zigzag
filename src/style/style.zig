@@ -7,6 +7,22 @@ const border_mod = @import("border.zig");
 const ansi = @import("../terminal/ansi.zig");
 const measure = @import("../layout/measure.zig");
 
+const ListWriter = struct {
+    list: *std.array_list.Managed(u8),
+
+    pub fn writeByte(self: *ListWriter, byte: u8) !void {
+        try self.list.append(byte);
+    }
+
+    pub fn writeAll(self: *ListWriter, bytes: []const u8) !void {
+        try self.list.appendSlice(bytes);
+    }
+
+    pub fn print(self: *ListWriter, comptime fmt: []const u8, args: anytype) !void {
+        try self.list.print(fmt, args);
+    }
+};
+
 pub const Color = color_mod.Color;
 pub const Border = border_mod.Border;
 pub const BorderChars = border_mod.BorderChars;
@@ -562,7 +578,8 @@ pub const Style = struct {
     /// Render styled text
     pub fn render(self: Self, allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
+        var list_writer = ListWriter{ .list = &result };
+        const writer = &list_writer;
 
         // Preprocess tabs if tab_width is set
         var processed_text = text;
@@ -963,7 +980,8 @@ pub const StyleRange = struct {
 /// Render text with different styles applied to specific byte ranges
 pub fn renderWithRanges(allocator: std.mem.Allocator, text: []const u8, ranges: []const StyleRange) ![]const u8 {
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
+    var list_writer = ListWriter{ .list = &result };
+    const writer = &list_writer;
 
     var pos: usize = 0;
     while (pos < text.len) {
@@ -1007,7 +1025,8 @@ pub fn renderWithHighlights(
     base_style: Style,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
+    var list_writer = ListWriter{ .list = &result };
+    const writer = &list_writer;
 
     var pos: usize = 0;
     var pi: usize = 0; // position index

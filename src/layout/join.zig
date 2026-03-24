@@ -55,10 +55,9 @@ pub fn horizontal(allocator: std.mem.Allocator, valign: VAlign, parts: []const [
 
     // Build result
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     for (0..max_height) |row| {
-        if (row > 0) try writer.writeByte('\n');
+        if (row > 0) try result.append('\n');
 
         for (parts, 0..) |_, part_idx| {
             const lines = all_lines[part_idx];
@@ -79,18 +78,18 @@ pub fn horizontal(allocator: std.mem.Allocator, valign: VAlign, parts: []const [
 
             if (line_idx) |idx| {
                 const line = lines[idx];
-                try writer.writeAll(line);
+                try result.appendSlice(line);
                 // Pad to width
                 const line_width = measure.width(line);
                 if (line_width < w) {
                     for (0..(w - line_width)) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 }
             } else {
                 // Empty line
                 for (0..w) |_| {
-                    try writer.writeByte(' ');
+                    try result.append(' ');
                 }
             }
         }
@@ -111,16 +110,15 @@ pub fn vertical(allocator: std.mem.Allocator, halign: HAlign, parts: []const []c
     }
 
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     for (parts, 0..) |part, part_idx| {
-        if (part_idx > 0) try writer.writeByte('\n');
+        if (part_idx > 0) try result.append('\n');
 
         var lines = std.mem.splitScalar(u8, part, '\n');
         var first_line = true;
 
         while (lines.next()) |line| {
-            if (!first_line) try writer.writeByte('\n');
+            if (!first_line) try result.append('\n');
             first_line = false;
 
             const line_width = measure.width(line);
@@ -128,27 +126,27 @@ pub fn vertical(allocator: std.mem.Allocator, halign: HAlign, parts: []const []c
 
             switch (halign) {
                 .left => {
-                    try writer.writeAll(line);
+                    try result.appendSlice(line);
                     for (0..padding) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 },
                 .center => {
                     const left_pad = padding / 2;
                     const right_pad = padding - left_pad;
                     for (0..left_pad) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
-                    try writer.writeAll(line);
+                    try result.appendSlice(line);
                     for (0..right_pad) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 },
                 .right => {
                     for (0..padding) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
-                    try writer.writeAll(line);
+                    try result.appendSlice(line);
                 },
             }
         }

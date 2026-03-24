@@ -344,28 +344,28 @@ pub fn iterm2InlineImage(writer: anytype, params: []const u8, payload: []const u
 
 test "osc52Encoded direct BEL" {
     var buf: [128]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    try osc52Encoded(stream.writer(), "c", "YQ==", .bel, .none);
-    try std.testing.expectEqualStrings("\x1b]52;c;YQ==\x07", stream.getWritten());
+    var writer: std.Io.Writer = .fixed(&buf);
+    try osc52Encoded(&writer, "c", "YQ==", .bel, .none);
+    try std.testing.expectEqualStrings("\x1b]52;c;YQ==\x07", writer.buffered());
 }
 
 test "osc52Encoded direct ST" {
     var buf: [128]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    try osc52Encoded(stream.writer(), "c", "YQ==", .st, .none);
-    try std.testing.expectEqualStrings("\x1b]52;c;YQ==\x1b\\", stream.getWritten());
+    var writer: std.Io.Writer = .fixed(&buf);
+    try osc52Encoded(&writer, "c", "YQ==", .st, .none);
+    try std.testing.expectEqualStrings("\x1b]52;c;YQ==\x1b\\", writer.buffered());
 }
 
 test "osc52Encoded tmux passthrough BEL" {
     var buf: [256]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    try osc52Encoded(stream.writer(), "c", "YQ==", .bel, .tmux);
-    try std.testing.expectEqualStrings("\x1bPtmux;\x1b\x1b]52;c;YQ==\x07\x1b\\", stream.getWritten());
+    var writer: std.Io.Writer = .fixed(&buf);
+    try osc52Encoded(&writer, "c", "YQ==", .bel, .tmux);
+    try std.testing.expectEqualStrings("\x1bPtmux;\x1b\x1b]52;c;YQ==\x07\x1b\\", writer.buffered());
 }
 
 test "osc52Encoded tmux passthrough ST" {
     var buf: [256]u8 = undefined;
-    var stream = std.io.fixedBufferStream(&buf);
-    try osc52Encoded(stream.writer(), "c", "YQ==", .st, .tmux);
-    try std.testing.expectEqualStrings("\x1bPtmux;\x1b\x1b]52;c;YQ==\x1b\x1b\\\x1b\\", stream.getWritten());
+    var writer: std.Io.Writer = .fixed(&buf);
+    try osc52Encoded(&writer, "c", "YQ==", .st, .tmux);
+    try std.testing.expectEqualStrings("\x1bPtmux;\x1b\x1b]52;c;YQ==\x1b\x1b\\\x1b\\", writer.buffered());
 }

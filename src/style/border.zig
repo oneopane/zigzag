@@ -244,56 +244,55 @@ pub fn drawBorder(
     height: usize,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     const inner_width = if (sides.left and sides.right) width -| 2 else if (sides.left or sides.right) width -| 1 else width;
 
     // Top border
     if (sides.top) {
-        if (sides.left) try writer.writeAll(chars.top_left);
+        if (sides.left) try result.appendSlice(chars.top_left);
         for (0..inner_width) |_| {
-            try writer.writeAll(chars.horizontal);
+            try result.appendSlice(chars.horizontal);
         }
-        if (sides.right) try writer.writeAll(chars.top_right);
-        try writer.writeByte('\n');
+        if (sides.right) try result.appendSlice(chars.top_right);
+        try result.append('\n');
     }
 
     // Content lines with side borders
     var lines = std.mem.splitScalar(u8, content, '\n');
     var line_count: usize = 0;
     while (lines.next()) |line| : (line_count += 1) {
-        if (sides.left) try writer.writeAll(chars.vertical);
+        if (sides.left) try result.appendSlice(chars.vertical);
 
         // Write the line, padding to inner_width
         const visible_width = visibleWidth(line);
-        try writer.writeAll(line);
+        try result.appendSlice(line);
         if (visible_width < inner_width) {
             for (0..(inner_width - visible_width)) |_| {
-                try writer.writeByte(' ');
+                try result.append(' ');
             }
         }
 
-        if (sides.right) try writer.writeAll(chars.vertical);
-        try writer.writeByte('\n');
+        if (sides.right) try result.appendSlice(chars.vertical);
+        try result.append('\n');
     }
 
     // Pad remaining lines if needed
     while (line_count < height -| (if (sides.top) @as(usize, 1) else 0) -| (if (sides.bottom) @as(usize, 1) else 0)) : (line_count += 1) {
-        if (sides.left) try writer.writeAll(chars.vertical);
+        if (sides.left) try result.appendSlice(chars.vertical);
         for (0..inner_width) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
-        if (sides.right) try writer.writeAll(chars.vertical);
-        try writer.writeByte('\n');
+        if (sides.right) try result.appendSlice(chars.vertical);
+        try result.append('\n');
     }
 
     // Bottom border
     if (sides.bottom) {
-        if (sides.left) try writer.writeAll(chars.bottom_left);
+        if (sides.left) try result.appendSlice(chars.bottom_left);
         for (0..inner_width) |_| {
-            try writer.writeAll(chars.horizontal);
+            try result.appendSlice(chars.horizontal);
         }
-        if (sides.right) try writer.writeAll(chars.bottom_right);
+        if (sides.right) try result.appendSlice(chars.bottom_right);
     }
 
     return result.toOwnedSlice();

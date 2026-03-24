@@ -37,7 +37,6 @@ pub fn place(
     }
 
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     // Calculate vertical offset
     const v_padding = if (height > content_height) height - content_height else 0;
@@ -59,25 +58,25 @@ pub fn place(
     // Write top padding
     for (0..top_padding) |_| {
         for (0..width) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
-        try writer.writeByte('\n');
+        try result.append('\n');
     }
 
     // Write content lines
     var lines = std.mem.splitScalar(u8, content, '\n');
     var first_line = true;
     while (lines.next()) |line| {
-        if (!first_line) try writer.writeByte('\n');
+        if (!first_line) try result.append('\n');
         first_line = false;
 
         // Left padding
         for (0..left_padding) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
 
         // Content
-        try writer.writeAll(line);
+        try result.appendSlice(line);
 
         // Right padding
         const line_width = measure.width(line);
@@ -86,15 +85,15 @@ pub fn place(
         else
             0;
         for (0..right_pad) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
     }
 
     // Write bottom padding
     for (0..bottom_padding) |_| {
-        try writer.writeByte('\n');
+        try result.append('\n');
         for (0..width) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
     }
 
@@ -111,7 +110,6 @@ pub fn placeAt(
     content: []const u8,
 ) ![]const u8 {
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     var lines = std.mem.splitScalar(u8, content, '\n');
     var content_lines = std.array_list.Managed([]const u8).init(allocator);
@@ -122,7 +120,7 @@ pub fn placeAt(
     }
 
     for (0..canvas_height) |row| {
-        if (row > 0) try writer.writeByte('\n');
+        if (row > 0) try result.append('\n');
 
         for (0..canvas_width) |col| {
             // Check if this position is within the content
@@ -151,19 +149,19 @@ pub fn placeAt(
 
                         // If we landed inside a wide character, emit space
                         if (current_col > content_col) {
-                            try writer.writeByte(' ');
+                            try result.append(' ');
                             continue;
                         }
 
                         if (byte_pos < line.len) {
                             const byte_len = std.unicode.utf8ByteSequenceLength(line[byte_pos]) catch 1;
-                            try writer.writeAll(line[byte_pos..][0..byte_len]);
+                            try result.appendSlice(line[byte_pos..][0..byte_len]);
                             continue;
                         }
                     }
                 }
             }
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
     }
 
@@ -196,10 +194,9 @@ pub fn overlay(
     }
 
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     for (0..base_height) |row| {
-        if (row > 0) try writer.writeByte('\n');
+        if (row > 0) try result.append('\n');
 
         const base_line = if (row < base_lines.items.len) base_lines.items[row] else "";
         const content_row = if (row >= y) row - y else base_height;
@@ -232,11 +229,11 @@ pub fn overlay(
 
                 // If we landed inside a wide character, emit space
                 if (current_col > content_col) {
-                    try writer.writeByte(' ');
+                    try result.append(' ');
                     used_content = true;
                 } else if (byte_pos < content_line.len and content_line[byte_pos] != ' ') {
                     const byte_len = std.unicode.utf8ByteSequenceLength(content_line[byte_pos]) catch 1;
-                    try writer.writeAll(content_line[byte_pos..][0..byte_len]);
+                    try result.appendSlice(content_line[byte_pos..][0..byte_len]);
                     used_content = true;
                 }
             }
@@ -260,15 +257,15 @@ pub fn overlay(
                     }
 
                     if (current_col > col) {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     } else if (byte_pos < base_line.len) {
                         const byte_len = std.unicode.utf8ByteSequenceLength(base_line[byte_pos]) catch 1;
-                        try writer.writeAll(base_line[byte_pos..][0..byte_len]);
+                        try result.appendSlice(base_line[byte_pos..][0..byte_len]);
                     } else {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 } else {
-                    try writer.writeByte(' ');
+                    try result.append(' ');
                 }
             }
         }
@@ -317,7 +314,6 @@ pub fn placeFloat(
     }
 
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     // Calculate offsets from float positions
     const h_space = if (width > content_width) width - content_width else 0;
@@ -333,25 +329,25 @@ pub fn placeFloat(
     // Write top padding
     for (0..top_padding) |_| {
         for (0..width) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
-        try writer.writeByte('\n');
+        try result.append('\n');
     }
 
     // Write content lines
     var lines = std.mem.splitScalar(u8, content, '\n');
     var first_line = true;
     while (lines.next()) |line| {
-        if (!first_line) try writer.writeByte('\n');
+        if (!first_line) try result.append('\n');
         first_line = false;
 
         // Left padding
         for (0..left_padding) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
 
         // Content
-        try writer.writeAll(line);
+        try result.appendSlice(line);
 
         // Right padding
         const line_width = measure.width(line);
@@ -360,15 +356,15 @@ pub fn placeFloat(
         else
             0;
         for (0..right_pad) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
     }
 
     // Write bottom padding
     for (0..bottom_padding) |_| {
-        try writer.writeByte('\n');
+        try result.append('\n');
         for (0..width) |_| {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
     }
 

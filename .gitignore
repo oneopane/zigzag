@@ -20,7 +20,6 @@ zig-cache/
 *.dll
 
 # Documentation output
-docs/
 
 # Test artifacts
 test-results/
