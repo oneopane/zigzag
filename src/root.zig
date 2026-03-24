@@ -60,6 +60,11 @@ pub const Options = @import("core/context.zig").Options;
 pub const msg = @import("core/message.zig");
 pub const log = @import("core/log.zig");
 pub const Logger = log.Logger;
+pub const animation = @import("core/animation.zig");
+pub const Tween = animation.Tween;
+pub const Easing = animation.Easing;
+pub const tweenColor = animation.tweenColor;
+pub const lerp = animation.lerp;
 
 // Terminal
 pub const terminal = @import("terminal/terminal.zig");
