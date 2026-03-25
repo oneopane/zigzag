@@ -287,20 +287,23 @@ pub const ColorProfile = enum {
             return .true_color;
         }
 
+        var env_map = std.process.Environ.createMap(currentEnviron(), std.heap.page_allocator) catch return .ansi;
+        defer env_map.deinit();
+
         // Check NO_COLOR
-        if (std.posix.getenv("NO_COLOR")) |_| {
+        if (env_map.contains("NO_COLOR")) {
             return .ascii;
         }
 
         // Check for true color support
-        if (std.posix.getenv("COLORTERM")) |ct| {
+        if (env_map.get("COLORTERM")) |ct| {
             if (std.mem.eql(u8, ct, "truecolor") or std.mem.eql(u8, ct, "24bit")) {
                 return .true_color;
             }
         }
 
         // Check for 256 color support
-        if (std.posix.getenv("TERM")) |term| {
+        if (env_map.get("TERM")) |term| {
             if (std.mem.indexOf(u8, term, "256color") != null) {
                 return .ansi256;
             }
@@ -331,7 +334,10 @@ pub fn hasDarkBackground() bool {
         return true;
     }
 
-    if (std.posix.getenv("COLORFGBG")) |val| {
+    var env_map = std.process.Environ.createMap(currentEnviron(), std.heap.page_allocator) catch return true;
+    defer env_map.deinit();
+
+    if (env_map.get("COLORFGBG")) |val| {
         // Format: "foreground;background"
         if (std.mem.lastIndexOfScalar(u8, val, ';')) |idx| {
             const bg_str = val[idx + 1 ..];
@@ -341,4 +347,14 @@ pub fn hasDarkBackground() bool {
         }
     }
     return true; // Default to dark
+}
+
+fn currentEnviron() std.process.Environ {
+    if (builtin.os.tag == .windows) {
+        return .{ .block = .global };
+    }
+
+    var count: usize = 0;
+    while (std.c.environ[count] != null) : (count += 1) {}
+    return .{ .block = .{ .slice = std.c.environ[0..count :null] } };
 }

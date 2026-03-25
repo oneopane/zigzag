@@ -246,9 +246,9 @@ pub const Config = struct {
     /// Enable bracketed paste mode
     bracketed_paste: bool = true,
     /// Custom input file (default: stdin)
-    input: ?std.fs.File = null,
+    input: ?std.Io.File = null,
     /// Custom output file (default: stdout)
-    output: ?std.fs.File = null,
+    output: ?std.Io.File = null,
     /// Enable Kitty keyboard protocol
     kitty_keyboard: bool = false,
     /// OSC 52 clipboard configuration
@@ -259,8 +259,8 @@ pub const Config = struct {
 pub const Terminal = struct {
     state: platform.State,
     config: Config,
-    stdout: std.fs.File,
-    stdin: std.fs.File,
+    stdout: std.Io.File,
+    stdin: std.Io.File,
     write_buffer: [4096]u8 = undefined,
     write_pos: usize = 0,
     pending_input: [8192]u8 = undefined,
@@ -269,8 +269,8 @@ pub const Terminal = struct {
     image_caps: ImageCapabilities = .{},
 
     pub fn init(config: Config) !Terminal {
-        const stdout = config.output orelse std.fs.File.stdout();
-        const stdin = config.input orelse std.fs.File.stdin();
+        const stdout = config.output orelse std.Io.File.stdout();
+        const stdin = config.input orelse std.Io.File.stdin();
 
         var state = platform.State.init();
         // Apply custom fd overrides
@@ -430,7 +430,7 @@ pub const Terminal = struct {
     /// Flush output buffer
     pub fn flush(self: *Terminal) !void {
         if (self.write_pos > 0) {
-            self.stdout.writeAll(self.write_buffer[0..self.write_pos]) catch |err| {
+            self.stdout.writeStreamingAll(std.Options.debug_io, self.write_buffer[0..self.write_pos]) catch |err| {
                 return switch (err) {
                     error.WouldBlock => error.WouldBlock,
                     else => error.BrokenPipe,
@@ -738,9 +738,9 @@ pub const Terminal = struct {
         if (!self.image_caps.iterm2_inline_image or path.len == 0) return false;
         if (!fileExists(path)) return false;
 
-        var file = try std.fs.cwd().openFile(path, .{});
-        defer file.close();
-        const stat = try file.stat();
+        var file = try std.Io.Dir.cwd().openFile(std.Options.debug_io, path, .{});
+        defer file.close(std.Options.debug_io);
+        const stat = try file.stat(std.Options.debug_io);
 
         var params_buf: [256]u8 = undefined;
         var params_writer: std.Io.Writer = .fixed(&params_buf);
@@ -945,8 +945,8 @@ pub const Terminal = struct {
         if (!fileExists(path)) return false;
 
         if (isSixelDataPath(path)) {
-            var file = try std.fs.cwd().openFile(path, .{});
-            defer file.close();
+            var file = try std.Io.Dir.cwd().openFile(std.Options.debug_io, path, .{});
+            defer file.close(std.Options.debug_io);
             try self.sendSixelPayloadFromFile(&file);
             return true;
         }
@@ -1233,7 +1233,7 @@ pub const Terminal = struct {
         }
     }
 
-    fn sendIterm2InlineImagePayload(self: *Terminal, params: []const u8, file: *std.fs.File, file_size: u64) !void {
+    fn sendIterm2InlineImagePayload(self: *Terminal, params: []const u8, file: *std.Io.File, file_size: u64) !void {
         const encoder = std.base64.standard.Encoder;
         var raw_buf: [3072]u8 = undefined;
         var b64_buf: [4096]u8 = undefined;
@@ -1246,7 +1246,7 @@ pub const Terminal = struct {
             try self.writeBytes(":");
 
             while (true) {
-                const n = try file.read(&raw_buf);
+                const n = try readFileChunk(file, &raw_buf);
                 if (n == 0) break;
                 const encoded_len = encoder.calcSize(n);
                 const encoded = encoder.encode(b64_buf[0..encoded_len], raw_buf[0..n]);
@@ -1262,7 +1262,7 @@ pub const Terminal = struct {
         try self.writeBytes("\x07");
 
         while (true) {
-            const n = try file.read(&raw_buf);
+            const n = try readFileChunk(file, &raw_buf);
             if (n == 0) break;
             const encoded_len = encoder.calcSize(n);
             const encoded = encoder.encode(b64_buf[0..encoded_len], raw_buf[0..n]);
@@ -1321,13 +1321,13 @@ pub const Terminal = struct {
         try self.writeBytes(ansi.OSC ++ "1337;FileEnd\x07");
     }
 
-    fn sendSixelPayloadFromFile(self: *Terminal, file: *std.fs.File) !void {
+    fn sendSixelPayloadFromFile(self: *Terminal, file: *std.Io.File) !void {
         var payload_buf: [4096]u8 = undefined;
         var first_read = true;
         var wrapped = false;
 
         while (true) {
-            const n = try file.read(&payload_buf);
+            const n = try readFileChunk(file, &payload_buf);
             if (n == 0) break;
             const chunk = payload_buf[0..n];
 
@@ -1753,8 +1753,15 @@ pub const Terminal = struct {
     }
 
     fn fileExists(path: []const u8) bool {
-        std.fs.cwd().access(path, .{}) catch return false;
+        std.Io.Dir.cwd().access(std.Options.debug_io, path, .{}) catch return false;
         return true;
+    }
+
+    fn readFileChunk(file: *std.Io.File, buffer: []u8) !usize {
+        return file.readStreaming(std.Options.debug_io, &.{buffer}) catch |err| switch (err) {
+            error.EndOfStream => 0,
+            else => |e| return e,
+        };
     }
 
     fn commandExists(name: []const u8) bool {

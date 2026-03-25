@@ -265,8 +265,11 @@ pub fn readInput(state: *State, buffer: []u8, timeout_ms: i32) !usize {
     }
 
     // Read from the configured stdin handle after it is signaled as readable.
-    const stdin: std.fs.File = .{ .handle = state.stdin_handle };
-    return stdin.read(buffer) catch 0;
+    const stdin: std.Io.File = .{
+        .handle = state.stdin_handle,
+        .flags = .{ .nonblocking = false },
+    };
+    return stdin.readStreaming(std.Options.debug_io, &.{buffer}) catch 0;
 }
 
 fn hasReadableConsoleInput(handle: windows.HANDLE) bool {

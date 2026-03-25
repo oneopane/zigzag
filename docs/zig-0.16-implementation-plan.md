@@ -181,15 +181,23 @@ Completed so far on this branch:
   - `src/core/program.zig`
   - `src/terminal/terminal.zig`
   - `src/core/log.zig`
+- completed follow-up library compatibility cleanup needed to clear `zig build test` in:
+  - `src/core/context.zig`
+  - `src/core/log.zig`
+  - `src/style/color.zig`
+  - `src/terminal/platform/windows.zig`
+  - `src/terminal/terminal.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
-- `zig build test` → still fails, but the C4 time frontier is now clear and the next surfaced library failure is:
-  - `src/terminal/terminal.zig` / `src/core/log.zig` / `src/core/context.zig` still using `std.fs.File`
+- `zig build test` → passes
+- `zig build` → still fails, but the remaining frontier is now examples/docs bootstrap cleanup:
+  - example mains still using `std.heap.GeneralPurposeAllocator`
+  - example-local cleanup still remains in `examples/animation.zig`, `examples/context_menu.zig`, `examples/showcase.zig`, and `examples/todo_list.zig`
 
 Immediate next step:
-- inspect and batch the next file/stdio API migration frontier now that C4 is complete
+- start Phase 5A / C1 allocator bootstrap sweep, then finish the deferred example-local cleanup in Phase 5B
 
 ---
 
