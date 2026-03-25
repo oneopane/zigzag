@@ -429,12 +429,19 @@ pub fn Program(comptime Model: type) type {
                     self.last_every_tick = self.context.elapsed;
                 },
                 .batch => |cmds| {
-                    for (cmds) |c| {
+                    // Defensively copy the slice before recursing. Callers often build
+                    // batches from temporary array literals such as `&.{ ... }`, and the
+                    // backing storage can be reused by deeper recursive calls.
+                    const owned_cmds = try self.allocator.dupe(UserCmd, cmds);
+                    defer self.allocator.free(owned_cmds);
+                    for (owned_cmds) |c| {
                         try self.processCommand(c);
                     }
                 },
                 .sequence => |cmds| {
-                    for (cmds) |c| {
+                    const owned_cmds = try self.allocator.dupe(UserCmd, cmds);
+                    defer self.allocator.free(owned_cmds);
+                    for (owned_cmds) |c| {
                         try self.processCommand(c);
                     }
                 },
