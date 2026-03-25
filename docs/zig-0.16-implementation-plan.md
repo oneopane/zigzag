@@ -202,6 +202,10 @@ Completed so far on this branch:
   - `src/env_compat.zig`
   - `src/terminal/platform/posix.zig`
   - `src/terminal/terminal.zig`
+- completed Phase 6 final audit / cleanup review:
+  - validation remains green across `zig test src/root.zig`, `zig build test`, and `zig build`
+  - no remaining hits for `GeneralPurposeAllocator`, `std.io.`, `fixedBufferStream`, `std.time.Timer` / `timestamp` / `milliTimestamp`, or `std.fmt.FormatOptions` in `src tests examples README.md`
+  - remaining `.writer()` hits were reviewed and are limited to valid modern terminal writer sites in `src/core/program.zig` and `src/terminal/terminal.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
@@ -210,7 +214,7 @@ Validation snapshot:
 - `zig build` → passes
 
 Immediate next step:
-- run the Phase 6 final audit / cleanup pass and review the remaining valid `.writer()` callsites
+- migration work on this branch is complete; any further `.writer()` refactors would be optional non-migration cleanup
 
 ---
 
@@ -575,6 +579,11 @@ Interpretation of audit results:
 - `std.time.Timer` / `timestamp` / `milliTimestamp` should be gone
 - `std.fmt.FormatOptions` should be gone
 - remaining `.writer()` uses should be reviewed and should only be valid modern writer sites
+
+Final result on this branch:
+- validation is green for `zig test src/root.zig`, `zig build test`, and `zig build`
+- `GeneralPurposeAllocator`, `std.io.`, `fixedBufferStream`, `std.time.Timer` / `timestamp` / `milliTimestamp`, and `std.fmt.FormatOptions` are absent from `src tests examples README.md`
+- remaining `.writer()` hits are intentional modern terminal writer callsites in `src/core/program.zig` and `src/terminal/terminal.zig`
 
 ---
 
