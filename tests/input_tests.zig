@@ -141,7 +141,7 @@ test "KeyEvent format" {
     var buf = std.array_list.Managed(u8).init(allocator);
     defer buf.deinit();
 
-    try event.format("", .{}, buf.writer());
+    try buf.print("{f}", .{event});
     try testing.expectEqualStrings("ctrl+a", buf.items);
 }
 

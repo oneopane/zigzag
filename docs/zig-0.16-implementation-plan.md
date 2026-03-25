@@ -172,15 +172,19 @@ Completed so far on this branch:
   - `src/components/text_area.zig`
   - `src/components/tooltip.zig`
 
+- completed Phase 3 / C5 formatter convention cleanup in:
+  - `src/input/keys.zig`
+  - `src/input/mouse.zig`
+  - `tests/input_tests.zig`
+
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
-- `zig build test` → still fails, but the renderer frontier is now clear and the remaining failures are:
-  - C4 time migration in `src/core/program.zig` (`std.time.Timer`)
-  - C5 formatter migration in `src/input/keys.zig` (`std.fmt.FormatOptions`), with `src/input/mouse.zig` still tracked in the migration plan
+- `zig build test` → still fails, and the remaining frontier is now C4 time migration:
+  - `src/core/program.zig` (`std.time.Timer`)
 
 Immediate next step:
-- return to C5 and C4 now that Phase 1 / C2 renderer migration is complete
+- start Phase 4 / C4 via the repo-local time compatibility layer
 
 ---
 
@@ -607,13 +611,13 @@ Type: **design-sensitive**
 
 Type: **mechanical after convention choice**
 
-- [ ] Confirm the formatter signature convention to use
-- [ ] Update `src/input/keys.zig`
-- [ ] Update `src/input/mouse.zig`
-- [ ] Update `tests/input_tests.zig`
-- [ ] Confirm tests exercise formatting in a current-style way
-- [ ] Re-run `zig build test`
-- [ ] Search for leftover `std.fmt.FormatOptions`
+- [x] Confirm the formatter signature convention to use
+- [x] Update `src/input/keys.zig`
+- [x] Update `src/input/mouse.zig`
+- [x] Update `tests/input_tests.zig`
+- [x] Confirm tests exercise formatting in a current-style way
+- [x] Re-run `zig build test`
+- [x] Search for leftover `std.fmt.FormatOptions`
 
 ---
 

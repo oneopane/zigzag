@@ -172,15 +172,7 @@ pub const KeyEvent = struct {
     }
 
     /// Format the key event for display
-    pub fn format(
-        self: KeyEvent,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(self: KeyEvent, writer: *std.Io.Writer) !void {
         if (self.modifiers.ctrl) try writer.writeAll("ctrl+");
         if (self.modifiers.alt) try writer.writeAll("alt+");
         if (self.modifiers.shift) try writer.writeAll("shift+");
