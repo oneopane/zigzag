@@ -391,45 +391,43 @@ pub fn MenuBar(comptime Action: type) type {
 
         pub fn view(self: *const Self, allocator: std.mem.Allocator, term_width: usize) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             // Render menu bar
             var bar_content = std.array_list.Managed(u8).init(allocator);
-            const bar_writer = bar_content.writer();
 
-            try bar_writer.writeAll(" ");
+            try bar_content.appendSlice(" ");
 
             for (self.menus[0..self.menu_count], 0..) |maybe_menu, i| {
                 const menu = maybe_menu orelse continue;
 
                 if (i > 0) {
-                    for (0..self.gap) |_| try bar_writer.writeByte(' ');
+                    for (0..self.gap) |_| try bar_content.append(' ');
                 }
 
                 const is_active = (self.state != .closed and self.active_menu == i);
                 const menu_style = if (is_active) self.bar_active_style else self.bar_item_style;
                 const padded = try std.fmt.allocPrint(allocator, " {s} ", .{menu.label});
                 const styled = try menu_style.render(allocator, padded);
-                try bar_writer.writeAll(styled);
+                try bar_content.appendSlice(styled);
             }
 
             // Pad bar to terminal width
             const bar_text = try bar_content.toOwnedSlice();
             const bar_width = measure.width(bar_text);
-            try writer.writeAll(bar_text);
+            try result.appendSlice(bar_text);
             if (bar_width < term_width) {
                 const pad_text = try allocator.alloc(u8, term_width - bar_width);
                 @memset(pad_text, ' ');
                 const styled_pad = try self.bar_style.render(allocator, pad_text);
-                try writer.writeAll(styled_pad);
+                try result.appendSlice(styled_pad);
             }
 
             // Render dropdown if open
             if (self.state == .dropdown_open) {
                 if (self.menus[self.active_menu]) |menu| {
                     const dropdown = try self.renderDropdown(allocator, menu);
-                    try writer.writeByte('\n');
-                    try writer.writeAll(dropdown);
+                    try result.append('\n');
+                    try result.appendSlice(dropdown);
                 }
             }
 
@@ -438,7 +436,6 @@ pub fn MenuBar(comptime Action: type) type {
 
         fn renderDropdown(self: *const Self, allocator: std.mem.Allocator, menu: Menu) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const w = result.writer();
 
             // Calculate width
             var max_label_width: usize = 0;
@@ -466,70 +463,69 @@ pub fn MenuBar(comptime Action: type) type {
                 }
             }
             // Indent dropdown to align with menu item
-            for (0..x_offset) |_| try w.writeByte(' ');
+            for (0..x_offset) |_| try result.append(' ');
 
             // Top border
-            try self.writeBorder(w, allocator, inner_width, .top);
-            try w.writeByte('\n');
+            try self.writeBorder(&result, allocator, inner_width, .top);
+            try result.append('\n');
 
             // Items
             for (menu.items[0..menu.item_count], 0..) |maybe_item, i| {
                 const item = maybe_item orelse continue;
 
-                for (0..x_offset) |_| try w.writeByte(' ');
+                for (0..x_offset) |_| try result.append(' ');
 
                 switch (item) {
                     .separator => {
-                        try self.writeBorder(w, allocator, inner_width, .middle);
+                        try self.writeBorder(&result, allocator, inner_width, .middle);
                     },
                     .action => |a| {
-                        try self.writeBorderChar(w, allocator, .left);
+                        try self.writeBorderChar(&result, allocator, .left);
 
                         const is_active = (i == self.active_item);
                         const s = if (!a.enabled) self.item_disabled_style else if (is_active) self.item_active_style else self.item_style;
 
                         // Build line content
                         var line = std.array_list.Managed(u8).init(allocator);
-                        const lw = line.writer();
 
-                        try lw.writeByte(' ');
+                        try line.append(' ');
 
                         // Check mark
                         if (a.checked) |checked| {
                             if (checked) {
-                                try lw.writeAll("\u{2713} ");
+                                try line.appendSlice("\u{2713} ");
                             } else {
-                                try lw.writeAll("  ");
+                                try line.appendSlice("  ");
                             }
                         }
 
-                        try lw.writeAll(a.label);
+                        try line.appendSlice(a.label);
 
                         // Pad between label and shortcut
                         const label_width = measure.width(a.label) + if (a.checked != null) @as(usize, 2) else @as(usize, 0);
                         const gap_needed = inner_width -| label_width -| measure.width(a.shortcut_display) -| 2;
-                        for (0..gap_needed) |_| try lw.writeByte(' ');
+                        for (0..gap_needed) |_| try line.append(' ');
 
                         if (a.shortcut_display.len > 0) {
-                            try lw.writeAll(a.shortcut_display);
+                            try line.appendSlice(a.shortcut_display);
                         }
 
-                        try lw.writeByte(' ');
+                        try line.append(' ');
 
                         const line_text = try line.toOwnedSlice();
                         const styled = try s.render(allocator, line_text);
-                        try w.writeAll(styled);
+                        try result.appendSlice(styled);
 
-                        try self.writeBorderChar(w, allocator, .right);
+                        try self.writeBorderChar(&result, allocator, .right);
                     },
                 }
 
-                try w.writeByte('\n');
+                try result.append('\n');
             }
 
             // Bottom border
-            for (0..x_offset) |_| try w.writeByte(' ');
-            try self.writeBorder(w, allocator, inner_width, .bottom);
+            for (0..x_offset) |_| try result.append(' ');
+            try self.writeBorder(&result, allocator, inner_width, .bottom);
 
             return result.toOwnedSlice();
         }
@@ -537,7 +533,7 @@ pub fn MenuBar(comptime Action: type) type {
         const BorderPos = enum { top, middle, bottom };
         const BorderSide = enum { left, right };
 
-        fn writeBorder(self: *const Self, writer: anytype, allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
+        fn writeBorder(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
             var bs = style_mod.Style{};
             bs = bs.fg(self.border_fg);
             bs = bs.inline_style(true);
@@ -554,14 +550,14 @@ pub fn MenuBar(comptime Action: type) type {
                 .bottom => bc.bottom_right,
             };
 
-            try writer.writeAll(try bs.render(allocator, cl));
+            try result.appendSlice(try bs.render(allocator, cl));
             for (0..width) |_| {
-                try writer.writeAll(try bs.render(allocator, bc.horizontal));
+                try result.appendSlice(try bs.render(allocator, bc.horizontal));
             }
-            try writer.writeAll(try bs.render(allocator, cr));
+            try result.appendSlice(try bs.render(allocator, cr));
         }
 
-        fn writeBorderChar(self: *const Self, writer: anytype, allocator: std.mem.Allocator, side: BorderSide) !void {
+        fn writeBorderChar(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, side: BorderSide) !void {
             var bs = style_mod.Style{};
             bs = bs.fg(self.border_fg);
             bs = bs.inline_style(true);
@@ -569,7 +565,7 @@ pub fn MenuBar(comptime Action: type) type {
                 .left => self.border_chars.vertical,
                 .right => self.border_chars.vertical,
             };
-            try writer.writeAll(try bs.render(allocator, char));
+            try result.appendSlice(try bs.render(allocator, char));
         }
     };
 }

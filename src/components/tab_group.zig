@@ -763,18 +763,17 @@ pub const TabGroup = struct {
         }
 
         var out = std.array_list.Managed(u8).init(allocator);
-        const writer = out.writer();
 
-        if (start > 0) try writer.writeAll(left_marker);
+        if (start > 0) try out.appendSlice(left_marker);
         for (start..end) |i| {
-            if (i > start) try writer.writeAll(sep);
+            if (i > start) try out.appendSlice(sep);
             if (truncated_single != null and i == start) {
-                try writer.writeAll(truncated_single.?);
+                try out.appendSlice(truncated_single.?);
             } else {
-                try writer.writeAll(pieces[i]);
+                try out.appendSlice(pieces[i]);
             }
         }
-        if (end < pieces.len) try writer.writeAll(right_marker);
+        if (end < pieces.len) try out.appendSlice(right_marker);
 
         return out.toOwnedSlice();
     }
@@ -795,15 +794,14 @@ pub const TabGroup = struct {
         }
 
         var base = std.array_list.Managed(u8).init(allocator);
-        const writer = base.writer();
 
-        try writer.writeAll(self.tab_prefix);
+        try base.appendSlice(self.tab_prefix);
         if (self.show_numbers) {
             const number = try std.fmt.allocPrint(allocator, "{d}{s}", .{ self.visibleOrdinal(tab_index) + 1, self.number_separator });
-            try writer.writeAll(number);
+            try base.appendSlice(number);
         }
-        try writer.writeAll(tab.title);
-        try writer.writeAll(self.tab_suffix);
+        try base.appendSlice(tab.title);
+        try base.appendSlice(self.tab_suffix);
 
         const raw = try base.toOwnedSlice();
 
@@ -1056,10 +1054,9 @@ fn joinPieces(allocator: std.mem.Allocator, parts: []const []const u8, separator
     if (parts.len == 0) return allocator.dupe(u8, "");
 
     var out = std.array_list.Managed(u8).init(allocator);
-    const writer = out.writer();
     for (parts, 0..) |part, i| {
-        if (i > 0) try writer.writeAll(separator);
-        try writer.writeAll(part);
+        if (i > 0) try out.appendSlice(separator);
+        try out.appendSlice(part);
     }
     return out.toOwnedSlice();
 }

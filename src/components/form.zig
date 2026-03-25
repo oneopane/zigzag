@@ -206,14 +206,13 @@ pub fn Form(comptime max_fields: usize) type {
         /// Render the form.
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             // Title
             if (self.title.len > 0) {
                 const styled_title = try self.title_style.render(allocator, self.title);
-                try writer.writeAll(styled_title);
-                try writer.writeByte('\n');
-                try writer.writeByte('\n');
+                try result.appendSlice(styled_title);
+                try result.append('\n');
+                try result.append('\n');
             }
 
             // Fields
@@ -221,7 +220,7 @@ pub fn Form(comptime max_fields: usize) type {
                 const field = self.fields[i] orelse continue;
 
                 if (i > 0) {
-                    for (0..self.spacing) |_| try writer.writeByte('\n');
+                    for (0..self.spacing) |_| try result.append('\n');
                 }
 
                 // Label
@@ -238,28 +237,28 @@ pub fn Form(comptime max_fields: usize) type {
                 } else self.label_style;
 
                 const styled_label = try lbl_style.render(allocator, label_text);
-                try writer.writeAll(styled_label);
-                try writer.writeByte('\n');
+                try result.appendSlice(styled_label);
+                try result.append('\n');
 
                 // Component view
                 const component_view = field.view_fn(field.ptr, allocator) catch try allocator.dupe(u8, "render error");
-                try writer.writeAll(component_view);
+                try result.appendSlice(component_view);
 
                 // Error message
                 if (field.error_msg) |err_msg| {
-                    try writer.writeByte('\n');
+                    try result.append('\n');
                     const styled_err = try self.error_style.render(allocator, err_msg);
-                    try writer.writeAll(styled_err);
+                    try result.appendSlice(styled_err);
                 }
             }
 
             // Footer
-            try writer.writeAll("\n\n");
+            try result.appendSlice("\n\n");
             var hint_style = style_mod.Style{};
             hint_style = hint_style.fg(Color.gray(12));
             hint_style = hint_style.inline_style(true);
             const hint = try hint_style.render(allocator, "Tab: next field | Ctrl+Enter: submit | Esc: cancel");
-            try writer.writeAll(hint);
+            try result.appendSlice(hint);
 
             return result.toOwnedSlice();
         }

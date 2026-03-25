@@ -217,27 +217,26 @@ pub const Tooltip = struct {
         if (!self.content_bg.isNone()) pad_s = pad_s.bg(self.content_bg);
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // ── Top border ──
-        try writer.writeAll(try bdr_s.render(allocator, bc.top_left));
-        try writer.writeAll(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
-        try writer.writeAll(try bdr_s.render(allocator, bc.top_right));
+        try result.appendSlice(try bdr_s.render(allocator, bc.top_left));
+        try result.appendSlice(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
+        try result.appendSlice(try bdr_s.render(allocator, bc.top_right));
 
         const styled_left = try bdr_s.render(allocator, bc.vertical);
         const styled_right = try bdr_s.render(allocator, bc.vertical);
 
         // ── Top padding ──
         for (0..self.padding.top) |_| {
-            try writer.writeByte('\n');
-            try writeEmptyLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try writeEmptyLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
         }
 
         // ── Content lines ──
         for (content_lines.items, 0..) |line, idx| {
-            try writer.writeByte('\n');
-            try writer.writeAll(styled_left);
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
+            try result.append('\n');
+            try result.appendSlice(styled_left);
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
 
             // Pick style: title or body
             const is_title_line = self.title != null and idx == 0;
@@ -246,25 +245,25 @@ pub const Tooltip = struct {
             if (!self.content_bg.isNone() and line_style.background.isNone()) {
                 line_style = line_style.bg(self.content_bg);
             }
-            try writer.writeAll(try line_style.render(allocator, line));
+            try result.appendSlice(try line_style.render(allocator, line));
 
             const line_w = measure.width(line);
             const fill: usize = if (max_content_w > line_w) max_content_w - line_w else 0;
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
-            try writer.writeAll(styled_right);
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
+            try result.appendSlice(styled_right);
         }
 
         // ── Bottom padding ──
         for (0..self.padding.bottom) |_| {
-            try writer.writeByte('\n');
-            try writeEmptyLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try writeEmptyLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
         }
 
         // ── Bottom border ──
-        try writer.writeByte('\n');
-        try writer.writeAll(try bdr_s.render(allocator, bc.bottom_left));
-        try writer.writeAll(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
-        try writer.writeAll(try bdr_s.render(allocator, bc.bottom_right));
+        try result.append('\n');
+        try result.appendSlice(try bdr_s.render(allocator, bc.bottom_left));
+        try result.appendSlice(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
+        try result.appendSlice(try bdr_s.render(allocator, bc.bottom_right));
 
         return result.toOwnedSlice();
     }
@@ -283,7 +282,6 @@ pub const Tooltip = struct {
 
         // Build full-screen output line by line
         var result = std.array_list.Managed(u8).init(allocator);
-        const wr = result.writer();
 
         // Collect box lines
         var box_lines = std.array_list.Managed([]const u8).init(allocator);
@@ -294,7 +292,7 @@ pub const Tooltip = struct {
         const is_horizontal = self.placement == .left or self.placement == .right;
 
         for (0..term_height) |row| {
-            if (row > 0) try wr.writeByte('\n');
+            if (row > 0) try result.append('\n');
 
             const in_box = row >= pos.box_y and row < pos.box_y + box_h;
             const is_arrow_row = self.show_arrow and row == pos.arrow_y;
@@ -304,18 +302,18 @@ pub const Tooltip = struct {
                 const box_line = if (box_line_idx < box_lines.items.len) box_lines.items[box_line_idx] else "";
                 // For left/right placement, include arrow on the same row as the box
                 if (is_arrow_row and is_horizontal) {
-                    try self.writeBoxRowWithSideArrow(allocator, wr, pos, box_line, term_width);
+                    try self.writeBoxRowWithSideArrow(allocator, &result, pos, box_line, term_width);
                 } else {
-                    try wr.writeAll(try nSpaces(allocator, pos.box_x));
-                    try wr.writeAll(box_line);
+                    try result.appendSlice(try nSpaces(allocator, pos.box_x));
+                    try result.appendSlice(box_line);
                     const right = pos.box_x + measure.width(box_line);
-                    if (right < term_width) try wr.writeAll(try nSpaces(allocator, term_width - right));
+                    if (right < term_width) try result.appendSlice(try nSpaces(allocator, term_width - right));
                 }
             } else if (is_arrow_row) {
                 // Top/bottom arrow on its own row
-                try self.writeArrowOnlyRow(allocator, wr, pos, term_width);
+                try self.writeArrowOnlyRow(allocator, &result, pos, term_width);
             } else {
-                try wr.writeAll(try nSpaces(allocator, term_width));
+                try result.appendSlice(try nSpaces(allocator, term_width));
             }
         }
 
@@ -489,47 +487,47 @@ pub const Tooltip = struct {
     // ── Render helpers (full-screen canvas) ────────────────────────────
 
     /// Arrow on its own row (top/bottom placement).
-    fn writeArrowOnlyRow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, tw: usize) !void {
-        try writer.writeAll(try nSpaces(allocator, pos.arrow_x));
-        try writer.writeAll(try self.renderStyledArrow(allocator));
+    fn writeArrowOnlyRow(self: *const Tooltip, allocator: std.mem.Allocator, result: *std.array_list.Managed(u8), pos: Position, tw: usize) !void {
+        try result.appendSlice(try nSpaces(allocator, pos.arrow_x));
+        try result.appendSlice(try self.renderStyledArrow(allocator));
         const aw = self.arrowDisplayWidth();
         const used = pos.arrow_x + aw;
-        if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
+        if (used < tw) try result.appendSlice(try nSpaces(allocator, tw - used));
     }
 
     /// Box row that also has a side arrow (left/right placement).
-    fn writeBoxRowWithSideArrow(self: *const Tooltip, allocator: std.mem.Allocator, writer: anytype, pos: Position, box_line: []const u8, tw: usize) !void {
+    fn writeBoxRowWithSideArrow(self: *const Tooltip, allocator: std.mem.Allocator, result: *std.array_list.Managed(u8), pos: Position, box_line: []const u8, tw: usize) !void {
         const box_line_w = measure.width(box_line);
         const aw = self.arrowDisplayWidth();
         const styled_arrow = try self.renderStyledArrow(allocator);
 
         if (self.placement == .right) {
             // Layout: [spaces] [arrow] [box_line] [spaces]
-            try writer.writeAll(try nSpaces(allocator, pos.arrow_x));
-            try writer.writeAll(styled_arrow);
+            try result.appendSlice(try nSpaces(allocator, pos.arrow_x));
+            try result.appendSlice(styled_arrow);
             const gap_between = if (pos.box_x > pos.arrow_x + aw) pos.box_x - pos.arrow_x - aw else 0;
-            try writer.writeAll(try nSpaces(allocator, gap_between));
-            try writer.writeAll(box_line);
+            try result.appendSlice(try nSpaces(allocator, gap_between));
+            try result.appendSlice(box_line);
             const used = pos.arrow_x + aw + gap_between + box_line_w;
-            if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
+            if (used < tw) try result.appendSlice(try nSpaces(allocator, tw - used));
         } else {
             // .left — Layout: [spaces] [box_line] [arrow] [spaces]
-            try writer.writeAll(try nSpaces(allocator, pos.box_x));
-            try writer.writeAll(box_line);
+            try result.appendSlice(try nSpaces(allocator, pos.box_x));
+            try result.appendSlice(box_line);
             const gap_between = if (pos.arrow_x > pos.box_x + box_line_w) pos.arrow_x - pos.box_x - box_line_w else 0;
-            try writer.writeAll(try nSpaces(allocator, gap_between));
-            try writer.writeAll(styled_arrow);
+            try result.appendSlice(try nSpaces(allocator, gap_between));
+            try result.appendSlice(styled_arrow);
             const used = pos.box_x + box_line_w + gap_between + aw;
-            if (used < tw) try writer.writeAll(try nSpaces(allocator, tw - used));
+            if (used < tw) try result.appendSlice(try nSpaces(allocator, tw - used));
         }
     }
 
     // ── Private Helpers ───────────────────────────────────────────────
 
-    fn writeEmptyLine(allocator: std.mem.Allocator, writer: anytype, styled_left: []const u8, styled_right: []const u8, pad_s: style_mod.Style, inner_w: usize) !void {
-        try writer.writeAll(styled_left);
-        try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, inner_w)));
-        try writer.writeAll(styled_right);
+    fn writeEmptyLine(allocator: std.mem.Allocator, result: *std.array_list.Managed(u8), styled_left: []const u8, styled_right: []const u8, pad_s: style_mod.Style, inner_w: usize) !void {
+        try result.appendSlice(styled_left);
+        try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, inner_w)));
+        try result.appendSlice(styled_right);
     }
 
     fn repeatStr(allocator: std.mem.Allocator, s: style_mod.Style, str: []const u8, count: usize) ![]const u8 {
@@ -606,21 +604,21 @@ const CellColor = union(enum) {
         };
     }
 
-    fn writeFg(self: CellColor, wr: anytype) !void {
+    fn writeFg(self: CellColor, result: *std.array_list.Managed(u8)) !void {
         switch (self) {
-            .none => try wr.writeAll("\x1b[39m"),
-            .ansi => |a| try wr.print("\x1b[{d}m", .{a.fgCode()}),
-            .ansi256 => |n| try wr.print("\x1b[38;5;{d}m", .{n}),
-            .rgb => |c| try wr.print("\x1b[38;2;{d};{d};{d}m", .{ c[0], c[1], c[2] }),
+            .none => try result.appendSlice("\x1b[39m"),
+            .ansi => |a| try result.print("\x1b[{d}m", .{a.fgCode()}),
+            .ansi256 => |n| try result.print("\x1b[38;5;{d}m", .{n}),
+            .rgb => |c| try result.print("\x1b[38;2;{d};{d};{d}m", .{ c[0], c[1], c[2] }),
         }
     }
 
-    fn writeBg(self: CellColor, wr: anytype) !void {
+    fn writeBg(self: CellColor, result: *std.array_list.Managed(u8)) !void {
         switch (self) {
-            .none => try wr.writeAll("\x1b[49m"),
-            .ansi => |a| try wr.print("\x1b[{d}m", .{a.bgCode()}),
-            .ansi256 => |n| try wr.print("\x1b[48;5;{d}m", .{n}),
-            .rgb => |c| try wr.print("\x1b[48;2;{d};{d};{d}m", .{ c[0], c[1], c[2] }),
+            .none => try result.appendSlice("\x1b[49m"),
+            .ansi => |a| try result.print("\x1b[{d}m", .{a.bgCode()}),
+            .ansi256 => |n| try result.print("\x1b[48;5;{d}m", .{n}),
+            .rgb => |c| try result.print("\x1b[48;2;{d};{d};{d}m", .{ c[0], c[1], c[2] }),
         }
     }
 };
@@ -766,12 +764,11 @@ const CellGrid = struct {
     /// (like Ratatui's Buffer::diff), producing minimal output.
     fn render(self: *const CellGrid, allocator: std.mem.Allocator) ![]const u8 {
         var buf = std.array_list.Managed(u8).init(allocator);
-        const wr = buf.writer();
 
         var prev_style = CellStyle{};
 
         for (0..self.h) |row| {
-            if (row > 0) try wr.writeByte('\n');
+            if (row > 0) try buf.append('\n');
 
             // Track trailing spaces to avoid emitting them
             for (0..self.w) |col| {
@@ -782,19 +779,19 @@ const CellGrid = struct {
 
                 // Emit style change if needed
                 if (!cell.style.eql(prev_style)) {
-                    try emitStyleDiff(wr, prev_style, cell.style);
+                    try emitStyleDiff(&buf, prev_style, cell.style);
                     prev_style = cell.style;
                 }
 
                 // Emit character
                 if (cell.char.len > 0) {
-                    try wr.writeAll(cell.char);
+                    try buf.appendSlice(cell.char);
                 }
             }
         }
 
         // Final reset
-        try wr.writeAll("\x1b[0m");
+        try buf.appendSlice("\x1b[0m");
 
         return buf.toOwnedSlice();
     }
@@ -884,11 +881,11 @@ fn applySgr(style: *CellStyle, params: []const u8) void {
 }
 
 /// Emit the minimal SGR diff to transition from one style to another.
-fn emitStyleDiff(wr: anytype, prev: CellStyle, next: CellStyle) !void {
+fn emitStyleDiff(result: *std.array_list.Managed(u8), prev: CellStyle, next: CellStyle) !void {
     // If the new style is default, just reset
     const default_style = CellStyle{};
     if (next.eql(default_style)) {
-        try wr.writeAll("\x1b[0m");
+        try result.appendSlice("\x1b[0m");
         return;
     }
 
@@ -901,24 +898,24 @@ fn emitStyleDiff(wr: anytype, prev: CellStyle, next: CellStyle) !void {
         (prev.strikethrough and !next.strikethrough);
 
     if (needs_reset) {
-        try wr.writeAll("\x1b[0m");
+        try result.appendSlice("\x1b[0m");
         // After reset, emit all attributes of the new style
-        if (next.bold) try wr.writeAll("\x1b[1m");
-        if (next.dim) try wr.writeAll("\x1b[2m");
-        if (next.italic) try wr.writeAll("\x1b[3m");
-        if (next.underline) try wr.writeAll("\x1b[4m");
-        if (next.strikethrough) try wr.writeAll("\x1b[9m");
-        if (!next.fg.eql(.none)) try next.fg.writeFg(wr);
-        if (!next.bg.eql(.none)) try next.bg.writeBg(wr);
+        if (next.bold) try result.appendSlice("\x1b[1m");
+        if (next.dim) try result.appendSlice("\x1b[2m");
+        if (next.italic) try result.appendSlice("\x1b[3m");
+        if (next.underline) try result.appendSlice("\x1b[4m");
+        if (next.strikethrough) try result.appendSlice("\x1b[9m");
+        if (!next.fg.eql(.none)) try next.fg.writeFg(result);
+        if (!next.bg.eql(.none)) try next.bg.writeBg(result);
         return;
     }
 
     // Otherwise, emit only what changed
-    if (!prev.fg.eql(next.fg)) try next.fg.writeFg(wr);
-    if (!prev.bg.eql(next.bg)) try next.bg.writeBg(wr);
-    if (!prev.bold and next.bold) try wr.writeAll("\x1b[1m");
-    if (!prev.dim and next.dim) try wr.writeAll("\x1b[2m");
-    if (!prev.italic and next.italic) try wr.writeAll("\x1b[3m");
-    if (!prev.underline and next.underline) try wr.writeAll("\x1b[4m");
-    if (!prev.strikethrough and next.strikethrough) try wr.writeAll("\x1b[9m");
+    if (!prev.fg.eql(next.fg)) try next.fg.writeFg(result);
+    if (!prev.bg.eql(next.bg)) try next.bg.writeBg(result);
+    if (!prev.bold and next.bold) try result.appendSlice("\x1b[1m");
+    if (!prev.dim and next.dim) try result.appendSlice("\x1b[2m");
+    if (!prev.italic and next.italic) try result.appendSlice("\x1b[3m");
+    if (!prev.underline and next.underline) try result.appendSlice("\x1b[4m");
+    if (!prev.strikethrough and next.strikethrough) try result.appendSlice("\x1b[9m");
 }

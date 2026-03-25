@@ -398,10 +398,9 @@ pub const Modal = struct {
 
         // Build full-screen output
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         for (0..term_height) |row| {
-            if (row > 0) try writer.writeByte('\n');
+            if (row > 0) try result.append('\n');
 
             const in_modal = row >= modal_y and row < modal_y + box_h;
             if (in_modal) {
@@ -409,21 +408,21 @@ pub const Modal = struct {
                 if (mline_idx < modal_lines.len) {
                     // Left backdrop
                     if (modal_x > 0) {
-                        try writer.writeAll(try renderBackdropSegment(allocator, bd, modal_x));
+                        try result.appendSlice(try renderBackdropSegment(allocator, bd, modal_x));
                     }
                     // Modal line
-                    try writer.writeAll(modal_lines[mline_idx]);
+                    try result.appendSlice(modal_lines[mline_idx]);
                     // Right backdrop
                     const mline_w = measure.width(modal_lines[mline_idx]);
                     const right_start = modal_x + mline_w;
                     if (right_start < term_width) {
-                        try writer.writeAll(try renderBackdropSegment(allocator, bd, term_width - right_start));
+                        try result.appendSlice(try renderBackdropSegment(allocator, bd, term_width - right_start));
                     }
                 } else {
-                    try writer.writeAll(try renderBackdropSegment(allocator, bd, term_width));
+                    try result.appendSlice(try renderBackdropSegment(allocator, bd, term_width));
                 }
             } else {
-                try writer.writeAll(try renderBackdropSegment(allocator, bd, term_width));
+                try result.appendSlice(try renderBackdropSegment(allocator, bd, term_width));
             }
         }
 
@@ -453,25 +452,24 @@ pub const Modal = struct {
         if (!self.content_bg.isNone()) pad_s = pad_s.bg(self.content_bg);
 
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         // ── Top border ──
-        try writer.writeAll(try bdr_s.render(allocator, bc.top_left));
+        try result.appendSlice(try bdr_s.render(allocator, bc.top_left));
         if (self.title.len > 0) {
             const title_w = measure.width(self.title);
             // top + space + title + space + remaining top chars
             const used: usize = 3 + title_w; // 1 top + 1 space + title + 1 space
             const remaining: usize = if (inner_w > used) inner_w - used else 0;
 
-            try writer.writeAll(try bdr_s.render(allocator, bc.horizontal));
-            try writer.writeAll(try bdr_s.render(allocator, " "));
-            try writer.writeAll(try self.title_style.inline_style(true).render(allocator, self.title));
-            try writer.writeAll(try bdr_s.render(allocator, " "));
-            try writer.writeAll(try repeatStr(allocator, bdr_s, bc.horizontal, remaining));
+            try result.appendSlice(try bdr_s.render(allocator, bc.horizontal));
+            try result.appendSlice(try bdr_s.render(allocator, " "));
+            try result.appendSlice(try self.title_style.inline_style(true).render(allocator, self.title));
+            try result.appendSlice(try bdr_s.render(allocator, " "));
+            try result.appendSlice(try repeatStr(allocator, bdr_s, bc.horizontal, remaining));
         } else {
-            try writer.writeAll(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
+            try result.appendSlice(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
         }
-        try writer.writeAll(try bdr_s.render(allocator, bc.top_right));
+        try result.appendSlice(try bdr_s.render(allocator, bc.top_right));
 
         // Helpers for inner lines
         const styled_left = try bdr_s.render(allocator, bc.vertical);
@@ -479,8 +477,8 @@ pub const Modal = struct {
 
         // ── Top padding ──
         for (0..self.padding.top) |_| {
-            try writer.writeByte('\n');
-            try self.writeEmptyInnerLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try self.writeEmptyInnerLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
         }
 
         // ── Body lines ──
@@ -490,69 +488,68 @@ pub const Modal = struct {
             if (body_line_count >= max_body_lines) break;
             body_line_count += 1;
 
-            try writer.writeByte('\n');
-            try writer.writeAll(styled_left);
+            try result.append('\n');
+            try result.appendSlice(styled_left);
 
             // Left padding
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
 
             // Body text
             var merged_body = self.body_style.inline_style(true);
             if (!self.content_bg.isNone() and merged_body.background.isNone()) {
                 merged_body = merged_body.bg(self.content_bg);
             }
-            try writer.writeAll(try merged_body.render(allocator, line));
+            try result.appendSlice(try merged_body.render(allocator, line));
 
             // Right fill
             const line_w = measure.width(line);
             const fill: usize = if (content_w > line_w) content_w - line_w else 0;
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
 
-            try writer.writeAll(styled_right);
+            try result.appendSlice(styled_right);
         }
 
         // Pad body if fixed/percent height has more room
         while (body_line_count < max_body_lines) : (body_line_count += 1) {
-            try writer.writeByte('\n');
-            try self.writeEmptyInnerLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try self.writeEmptyInnerLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
         }
 
         // ── Footer ──
         if (self.footer) |footer_text| {
             // Separator line
-            try writer.writeByte('\n');
-            try self.writeEmptyInnerLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try self.writeEmptyInnerLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
 
-            try writer.writeByte('\n');
-            try writer.writeAll(styled_left);
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
+            try result.append('\n');
+            try result.appendSlice(styled_left);
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, self.padding.left)));
 
             var merged_footer = self.footer_style.inline_style(true);
             if (!self.content_bg.isNone() and merged_footer.background.isNone()) {
                 merged_footer = merged_footer.bg(self.content_bg);
             }
-            try writer.writeAll(try merged_footer.render(allocator, footer_text));
+            try result.appendSlice(try merged_footer.render(allocator, footer_text));
 
             const fw = measure.width(footer_text);
             const fill: usize = if (content_w > fw) content_w - fw else 0;
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
-            try writer.writeAll(styled_right);
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, fill + self.padding.right)));
+            try result.appendSlice(styled_right);
         }
 
         // ── Buttons ──
         if (self.button_count > 0) {
             // Separator
-            try writer.writeByte('\n');
-            try self.writeEmptyInnerLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try self.writeEmptyInnerLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
 
             // Render button row content
             var btn_buf = std.array_list.Managed(u8).init(allocator);
-            const btn_writer = btn_buf.writer();
 
             for (self.buttons[0..self.button_count], 0..) |maybe_btn, i| {
                 if (maybe_btn) |btn| {
                     if (i > 0) {
-                        try btn_writer.writeAll(try pad_s.render(allocator, "  "));
+                        try btn_buf.appendSlice(try pad_s.render(allocator, "  "));
                     }
                     const label = try std.fmt.allocPrint(allocator, " {s} ", .{btn.label});
                     var btn_style = if (i == self.selected_button) self.button_active_style else self.button_inactive_style;
@@ -560,14 +557,14 @@ pub const Modal = struct {
                     if (!self.content_bg.isNone() and i != self.selected_button and btn_style.background.isNone()) {
                         btn_style = btn_style.bg(self.content_bg);
                     }
-                    try btn_writer.writeAll(try btn_style.render(allocator, label));
+                    try btn_buf.appendSlice(try btn_style.render(allocator, label));
                 }
             }
             const btn_row = try btn_buf.toOwnedSlice();
             const btn_row_w = measure.width(btn_row);
 
-            try writer.writeByte('\n');
-            try writer.writeAll(styled_left);
+            try result.append('\n');
+            try result.appendSlice(styled_left);
 
             // Align buttons within inner_w
             const left_spaces: usize = switch (self.button_align) {
@@ -583,24 +580,24 @@ pub const Modal = struct {
             else
                 0;
 
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, left_spaces)));
-            try writer.writeAll(btn_row);
-            try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, right_spaces)));
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, left_spaces)));
+            try result.appendSlice(btn_row);
+            try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, right_spaces)));
 
-            try writer.writeAll(styled_right);
+            try result.appendSlice(styled_right);
         }
 
         // ── Bottom padding ──
         for (0..self.padding.bottom) |_| {
-            try writer.writeByte('\n');
-            try self.writeEmptyInnerLine(allocator, writer, styled_left, styled_right, pad_s, inner_w);
+            try result.append('\n');
+            try self.writeEmptyInnerLine(allocator, &result, styled_left, styled_right, pad_s, inner_w);
         }
 
         // ── Bottom border ──
-        try writer.writeByte('\n');
-        try writer.writeAll(try bdr_s.render(allocator, bc.bottom_left));
-        try writer.writeAll(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
-        try writer.writeAll(try bdr_s.render(allocator, bc.bottom_right));
+        try result.append('\n');
+        try result.appendSlice(try bdr_s.render(allocator, bc.bottom_left));
+        try result.appendSlice(try repeatStr(allocator, bdr_s, bc.horizontal, inner_w));
+        try result.appendSlice(try bdr_s.render(allocator, bc.bottom_right));
 
         return result.toOwnedSlice();
     }
@@ -610,16 +607,16 @@ pub const Modal = struct {
     fn writeEmptyInnerLine(
         self: *const Modal,
         allocator: std.mem.Allocator,
-        writer: anytype,
+        result: *std.array_list.Managed(u8),
         styled_left: []const u8,
         styled_right: []const u8,
         pad_s: style_mod.Style,
         inner_w: usize,
     ) !void {
         _ = self;
-        try writer.writeAll(styled_left);
-        try writer.writeAll(try pad_s.render(allocator, try nSpaces(allocator, inner_w)));
-        try writer.writeAll(styled_right);
+        try result.appendSlice(styled_left);
+        try result.appendSlice(try pad_s.render(allocator, try nSpaces(allocator, inner_w)));
+        try result.appendSlice(styled_right);
     }
 
     fn computeWidth(self: *const Modal, term_width: usize) usize {

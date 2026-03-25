@@ -528,13 +528,12 @@ pub fn Dropdown(comptime T: type) type {
 
         pub fn view(self: *const Self, allocator: std.mem.Allocator) ![]const u8 {
             var result = std.array_list.Managed(u8).init(allocator);
-            const writer = result.writer();
 
             // Label
             if (self.label.len > 0) {
                 const styled_label = try self.label_style.render(allocator, self.label);
-                try writer.writeAll(styled_label);
-                try writer.writeAll(" ");
+                try result.appendSlice(styled_label);
+                try result.appendSlice(" ");
             }
 
             // Trigger line
@@ -547,18 +546,18 @@ pub fn Dropdown(comptime T: type) type {
 
             const trig_style = if (self.focused) self.trigger_focused_style else self.trigger_style;
             const styled_trigger = try trig_style.render(allocator, display_text);
-            try writer.writeAll(styled_trigger);
-            try writer.writeAll(" ");
+            try result.appendSlice(styled_trigger);
+            try result.appendSlice(" ");
 
             const expand_str = if (self.expanded) "▲" else self.expand_symbol;
-            try writer.writeAll(expand_str);
+            try result.appendSlice(expand_str);
 
             if (!self.expanded) {
                 return result.toOwnedSlice();
             }
 
             // Expanded dropdown
-            try writer.writeByte('\n');
+            try result.append('\n');
 
             // Compute dropdown width
             var max_item_width: usize = 0;
@@ -571,25 +570,25 @@ pub fn Dropdown(comptime T: type) type {
             const inner_width = max_item_width + 2; // padding
 
             // Top border
-            try self.writeBorderLine(writer, allocator, inner_width, .top);
-            try writer.writeByte('\n');
+            try self.writeBorderLine(&result, allocator, inner_width, .top);
+            try result.append('\n');
 
             // Filter line
             if (self.filter_active) {
-                try self.writeBorderSide(writer, allocator, .left);
+                try self.writeBorderSide(&result, allocator, .left);
                 const filter_line = try std.fmt.allocPrint(allocator, " / {s}_", .{self.filter_text.items});
                 const styled = try self.filter_style.render(allocator, filter_line);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
                 const used = measure.width(filter_line);
                 if (used < inner_width) {
-                    try self.writePadding(writer, inner_width - used);
+                    try self.writePadding(&result, inner_width - used);
                 }
-                try self.writeBorderSide(writer, allocator, .right);
-                try writer.writeByte('\n');
+                try self.writeBorderSide(&result, allocator, .right);
+                try result.append('\n');
 
                 // Separator
-                try self.writeBorderLine(writer, allocator, inner_width, .middle);
-                try writer.writeByte('\n');
+                try self.writeBorderLine(&result, allocator, inner_width, .middle);
+                try result.append('\n');
             }
 
             // Scroll indicator (top)
@@ -599,15 +598,15 @@ pub fn Dropdown(comptime T: type) type {
             const has_below = end_idx < visible.len;
 
             if (has_above) {
-                try self.writeBorderSide(writer, allocator, .left);
+                try self.writeBorderSide(&result, allocator, .left);
                 const up_str = try std.fmt.allocPrint(allocator, " {s}", .{self.scroll_up_symbol});
-                try writer.writeAll(up_str);
+                try result.appendSlice(up_str);
                 const used = measure.width(up_str);
                 if (used < inner_width) {
-                    try self.writePadding(writer, inner_width - used);
+                    try self.writePadding(&result, inner_width - used);
                 }
-                try self.writeBorderSide(writer, allocator, .right);
-                try writer.writeByte('\n');
+                try self.writeBorderSide(&result, allocator, .right);
+                try result.append('\n');
             }
 
             // Items
@@ -620,35 +619,34 @@ pub fn Dropdown(comptime T: type) type {
                     // already have newline from previous
                 }
 
-                try self.writeBorderSide(writer, allocator, .left);
+                try self.writeBorderSide(&result, allocator, .left);
 
                 const item_idx = visible[idx];
                 const item = self.items.items[item_idx];
                 var line = std.array_list.Managed(u8).init(allocator);
-                const line_writer = line.writer();
 
-                try line_writer.writeByte(' ');
+                try line.append(' ');
 
                 // Cursor symbol
                 if (idx == self.cursor) {
-                    try line_writer.writeAll(self.cursor_symbol);
+                    try line.appendSlice(self.cursor_symbol);
                 } else {
                     for (0..self.cursor_symbol.len) |_| {
-                        try line_writer.writeByte(' ');
+                        try line.append(' ');
                     }
                 }
 
                 // Multi-select check
                 if (self.multi_select) {
                     if (self.selected_indices.contains(item_idx)) {
-                        try line_writer.writeAll(self.checked_symbol);
+                        try line.appendSlice(self.checked_symbol);
                     } else {
-                        try line_writer.writeAll(self.unchecked_symbol);
+                        try line.appendSlice(self.unchecked_symbol);
                     }
                 }
 
                 // Label
-                try line_writer.writeAll(item.label);
+                try line.appendSlice(item.label);
 
                 const line_text = try line.toOwnedSlice();
                 const item_s = if (!item.enabled)
@@ -661,36 +659,36 @@ pub fn Dropdown(comptime T: type) type {
                     self.item_style;
 
                 const styled_line = try item_s.render(allocator, line_text);
-                try writer.writeAll(styled_line);
+                try result.appendSlice(styled_line);
 
                 // Pad to width
                 const used = measure.width(line_text);
                 if (used < inner_width) {
-                    try self.writePadding(writer, inner_width - used);
+                    try self.writePadding(&result, inner_width - used);
                 }
 
-                try self.writeBorderSide(writer, allocator, .right);
+                try self.writeBorderSide(&result, allocator, .right);
                 if (rendered + 1 < self.max_visible and idx + 1 < visible.len) {
-                    try writer.writeByte('\n');
+                    try result.append('\n');
                 }
             }
 
             // Scroll indicator (bottom)
             if (has_below) {
-                try writer.writeByte('\n');
-                try self.writeBorderSide(writer, allocator, .left);
+                try result.append('\n');
+                try self.writeBorderSide(&result, allocator, .left);
                 const down_str = try std.fmt.allocPrint(allocator, " {s}", .{self.scroll_down_symbol});
-                try writer.writeAll(down_str);
+                try result.appendSlice(down_str);
                 const used = measure.width(down_str);
                 if (used < inner_width) {
-                    try self.writePadding(writer, inner_width - used);
+                    try self.writePadding(&result, inner_width - used);
                 }
-                try self.writeBorderSide(writer, allocator, .right);
+                try self.writeBorderSide(&result, allocator, .right);
             }
 
             // Bottom border
-            try writer.writeByte('\n');
-            try self.writeBorderLine(writer, allocator, inner_width, .bottom);
+            try result.append('\n');
+            try self.writeBorderLine(&result, allocator, inner_width, .bottom);
 
             return result.toOwnedSlice();
         }
@@ -709,7 +707,7 @@ pub fn Dropdown(comptime T: type) type {
         const BorderPos = enum { top, middle, bottom };
         const BorderSide = enum { left, right };
 
-        fn writeBorderLine(self: *const Self, writer: anytype, allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
+        fn writeBorderLine(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
             const bc = self.border_chars;
             var border_style = style_mod.Style{};
             border_style = border_style.fg(self.border_fg);
@@ -727,18 +725,18 @@ pub fn Dropdown(comptime T: type) type {
             };
 
             const styled_l = try border_style.render(allocator, corner_l);
-            try writer.writeAll(styled_l);
+            try result.appendSlice(styled_l);
 
             for (0..width) |_| {
                 const styled = try border_style.render(allocator, bc.horizontal);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
 
             const styled_r = try border_style.render(allocator, corner_r);
-            try writer.writeAll(styled_r);
+            try result.appendSlice(styled_r);
         }
 
-        fn writeBorderSide(self: *const Self, writer: anytype, allocator: std.mem.Allocator, side: BorderSide) !void {
+        fn writeBorderSide(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, side: BorderSide) !void {
             var border_style = style_mod.Style{};
             border_style = border_style.fg(self.border_fg);
             border_style = border_style.inline_style(true);
@@ -748,12 +746,12 @@ pub fn Dropdown(comptime T: type) type {
                 .right => self.border_chars.vertical,
             };
             const styled = try border_style.render(allocator, char);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
         }
 
-        fn writePadding(_: *const Self, writer: anytype, count: usize) !void {
+        fn writePadding(_: *const Self, result: *std.array_list.Managed(u8), count: usize) !void {
             for (0..count) |_| {
-                try writer.writeByte(' ');
+                try result.append(' ');
             }
         }
     };

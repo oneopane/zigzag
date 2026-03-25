@@ -289,60 +289,58 @@ pub fn ContextMenu(comptime Action: type) type {
             if (!self.visible) return try allocator.dupe(u8, "");
 
             var result = std.array_list.Managed(u8).init(allocator);
-            const w = result.writer();
 
             const inner_width = self.calcWidth();
 
             // Indent to x position
             // Top border
-            try self.writeIndent(w, self.x);
-            try self.writeBorder(w, allocator, inner_width, .top);
-            try w.writeByte('\n');
+            try self.writeIndent(&result, self.x);
+            try self.writeBorder(&result, allocator, inner_width, .top);
+            try result.append('\n');
 
             // Items
             for (self.items[0..self.item_count], 0..) |maybe_item, i| {
                 const item = maybe_item orelse continue;
 
-                try self.writeIndent(w, self.x);
+                try self.writeIndent(&result, self.x);
 
                 switch (item) {
                     .separator => {
-                        try self.writeBorder(w, allocator, inner_width, .middle);
+                        try self.writeBorder(&result, allocator, inner_width, .middle);
                     },
                     .action => |a| {
-                        try self.writeBorderChar(w, allocator, .left);
+                        try self.writeBorderChar(&result, allocator, .left);
 
                         const is_active = (i == self.cursor);
                         const s = if (!a.enabled) self.disabled_style else if (is_active) self.active_style else self.item_style;
 
                         var line = std.array_list.Managed(u8).init(allocator);
-                        const lw = line.writer();
-                        try lw.writeByte(' ');
-                        try lw.writeAll(a.label);
+                        try line.append(' ');
+                        try line.appendSlice(a.label);
 
                         const label_w = measure.width(a.label);
                         const shortcut_w = measure.width(a.shortcut_display);
                         const gap = inner_width -| label_w -| shortcut_w -| 2;
-                        for (0..gap) |_| try lw.writeByte(' ');
+                        for (0..gap) |_| try line.append(' ');
 
                         if (a.shortcut_display.len > 0) {
-                            try lw.writeAll(a.shortcut_display);
+                            try line.appendSlice(a.shortcut_display);
                         }
-                        try lw.writeByte(' ');
+                        try line.append(' ');
 
                         const line_text = try line.toOwnedSlice();
                         const styled = try s.render(allocator, line_text);
-                        try w.writeAll(styled);
+                        try result.appendSlice(styled);
 
-                        try self.writeBorderChar(w, allocator, .right);
+                        try self.writeBorderChar(&result, allocator, .right);
                     },
                 }
-                try w.writeByte('\n');
+                try result.append('\n');
             }
 
             // Bottom border
-            try self.writeIndent(w, self.x);
-            try self.writeBorder(w, allocator, inner_width, .bottom);
+            try self.writeIndent(&result, self.x);
+            try self.writeBorder(&result, allocator, inner_width, .bottom);
 
             return result.toOwnedSlice();
         }
@@ -350,11 +348,11 @@ pub fn ContextMenu(comptime Action: type) type {
         const BorderPos = enum { top, middle, bottom };
         const BorderSide = enum { left, right };
 
-        fn writeIndent(_: *const Self, writer: anytype, count: usize) !void {
-            for (0..count) |_| try writer.writeByte(' ');
+        fn writeIndent(_: *const Self, result: *std.array_list.Managed(u8), count: usize) !void {
+            for (0..count) |_| try result.append(' ');
         }
 
-        fn writeBorder(self: *const Self, writer: anytype, allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
+        fn writeBorder(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, width: usize, pos: BorderPos) !void {
             var bs = style_mod.Style{};
             bs = bs.fg(self.border_fg);
             bs = bs.inline_style(true);
@@ -371,21 +369,21 @@ pub fn ContextMenu(comptime Action: type) type {
                 .bottom => bc.bottom_right,
             };
 
-            try writer.writeAll(try bs.render(allocator, cl));
+            try result.appendSlice(try bs.render(allocator, cl));
             for (0..width) |_| {
-                try writer.writeAll(try bs.render(allocator, bc.horizontal));
+                try result.appendSlice(try bs.render(allocator, bc.horizontal));
             }
-            try writer.writeAll(try bs.render(allocator, cr));
+            try result.appendSlice(try bs.render(allocator, cr));
         }
 
-        fn writeBorderChar(self: *const Self, writer: anytype, allocator: std.mem.Allocator, side: BorderSide) !void {
+        fn writeBorderChar(self: *const Self, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, side: BorderSide) !void {
             var bs = style_mod.Style{};
             bs = bs.fg(self.border_fg);
             bs = bs.inline_style(true);
             const char = switch (side) {
                 .left, .right => self.border_chars.vertical,
             };
-            try writer.writeAll(try bs.render(allocator, char));
+            try result.appendSlice(try bs.render(allocator, char));
         }
     };
 }

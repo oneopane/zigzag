@@ -393,48 +393,46 @@ pub const Chart = struct {
     fn renderPlotRow(self: *const Chart, allocator: std.mem.Allocator, row_index: usize, plot_line: []const u8, plot_height: usize, y_label_width: usize, y_ticks: *const TickSet) ![]const u8 {
         _ = plot_height;
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         if (self.y_axis.show_labels) {
             const label = y_ticks.labelForRow(row_index) orelse "";
             const padded = try renderPaddedLabel(allocator, label, y_label_width, self.y_axis.label_style);
             defer allocator.free(padded);
-            try writer.writeAll(padded);
+            try result.appendSlice(padded);
         }
 
         if (self.y_axis.show_line) {
             const axis_glyph = try self.y_axis.style.render(allocator, " │");
             defer allocator.free(axis_glyph);
-            try writer.writeAll(axis_glyph);
+            try result.appendSlice(axis_glyph);
         } else if (y_label_width > 0) {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
 
-        try writer.writeAll(plot_line);
+        try result.appendSlice(plot_line);
         return try result.toOwnedSlice();
     }
 
     fn renderXAxisLineRow(self: *const Chart, allocator: std.mem.Allocator, plot_width: usize, y_label_width: usize) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         if (self.y_axis.show_labels) {
-            for (0..y_label_width) |_| try writer.writeByte(' ');
+            for (0..y_label_width) |_| try result.append(' ');
         }
 
         if (self.y_axis.show_line) {
             const corner = try self.x_axis.style.render(allocator, " └");
             defer allocator.free(corner);
-            try writer.writeAll(corner);
+            try result.appendSlice(corner);
         } else if (y_label_width > 0) {
-            try writer.writeByte(' ');
+            try result.append(' ');
         }
 
         var axis_style = self.x_axis.style;
         axis_style = charting.inlineStyle(axis_style);
         const segment = try axis_style.render(allocator, "─");
         defer allocator.free(segment);
-        for (0..plot_width) |_| try writer.writeAll(segment);
+        for (0..plot_width) |_| try result.appendSlice(segment);
 
         return try result.toOwnedSlice();
     }
@@ -575,15 +573,14 @@ const GridOrientation = enum { vertical, horizontal };
 fn renderPaddedLabel(allocator: std.mem.Allocator, label: []const u8, width: usize, style: Style) ![]const u8 {
     const label_width = measure.width(label);
     var result = std.array_list.Managed(u8).init(allocator);
-    const writer = result.writer();
 
     const padding = width -| label_width;
-    for (0..padding) |_| try writer.writeByte(' ');
+    for (0..padding) |_| try result.append(' ');
 
     if (label.len > 0) {
         const rendered = try style.render(allocator, label);
         defer allocator.free(rendered);
-        try writer.writeAll(rendered);
+        try result.appendSlice(rendered);
     }
 
     return try result.toOwnedSlice();

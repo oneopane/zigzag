@@ -544,7 +544,6 @@ pub const TextArea = struct {
     /// Render the text area
     pub fn view(self: *const TextArea, allocator: std.mem.Allocator) ![]const u8 {
         var result = std.array_list.Managed(u8).init(allocator);
-        const writer = result.writer();
 
         const line_num_width: usize = if (self.line_numbers) 5 else 0;
         const text_width = self.width -| @as(u16, @intCast(line_num_width));
@@ -554,7 +553,7 @@ pub const TextArea = struct {
 
         if (self.word_wrap) {
             for (0..self.height) |row| {
-                if (row > 0) try writer.writeByte('\n');
+                if (row > 0) try result.append('\n');
 
                 const visual_row = self.viewport_row + row;
                 const wrapped_row = self.wrappedRowAt(visual_row, text_width);
@@ -567,12 +566,12 @@ pub const TextArea = struct {
                             defer allocator.free(num_str);
                             const styled = try self.line_number_style.render(allocator, num_str);
                             defer allocator.free(styled);
-                            try writer.writeAll(styled);
+                            try result.appendSlice(styled);
                         } else {
-                            try writer.writeAll("     ");
+                            try result.appendSlice("     ");
                         }
                     } else {
-                        try writer.writeAll("     ");
+                        try result.appendSlice("     ");
                     }
                 }
 
@@ -581,12 +580,12 @@ pub const TextArea = struct {
 
                     // Show placeholder on first empty line
                     if (is_empty and r.line_idx == 0 and r.is_first_segment and self.placeholder.len > 0) {
-                        try self.renderPlaceholder(writer, allocator, text_width);
+                        try self.renderPlaceholder(&result, allocator, text_width);
                         continue;
                     }
 
                     try self.renderWrappedLineSegment(
-                        writer,
+                        &result,
                         allocator,
                         line.items,
                         r.line_idx,
@@ -596,7 +595,7 @@ pub const TextArea = struct {
                     );
                 } else {
                     for (0..text_width) |_| {
-                        try writer.writeByte(' ');
+                        try result.append(' ');
                     }
                 }
             }
@@ -605,7 +604,7 @@ pub const TextArea = struct {
         }
 
         for (0..self.height) |row| {
-            if (row > 0) try writer.writeByte('\n');
+            if (row > 0) try result.append('\n');
 
             const line_idx = self.viewport_row + row;
 
@@ -616,9 +615,9 @@ pub const TextArea = struct {
                     defer allocator.free(num_str);
                     const styled = try self.line_number_style.render(allocator, num_str);
                     defer allocator.free(styled);
-                    try writer.writeAll(styled);
+                    try result.appendSlice(styled);
                 } else {
-                    try writer.writeAll("     ");
+                    try result.appendSlice("     ");
                 }
             }
 
@@ -627,17 +626,17 @@ pub const TextArea = struct {
 
                 // Show placeholder on first empty line
                 if (is_empty and line_idx == 0 and self.placeholder.len > 0) {
-                    try self.renderPlaceholder(writer, allocator, text_width);
+                    try self.renderPlaceholder(&result, allocator, text_width);
                     continue;
                 }
 
                 // Render line content with cursor
-                try self.renderLine(writer, allocator, line.items, line_idx, text_width);
+                try self.renderLine(&result, allocator, line.items, line_idx, text_width);
             } else {
                 // Pad empty rows to full width
                 var i: usize = 0;
                 while (i < text_width) : (i += 1) {
-                    try writer.writeByte(' ');
+                    try result.append(' ');
                 }
             }
         }
@@ -645,7 +644,7 @@ pub const TextArea = struct {
         return result.toOwnedSlice();
     }
 
-    fn renderPlaceholder(self: *const TextArea, writer: anytype, allocator: std.mem.Allocator, max_width: u16) !void {
+    fn renderPlaceholder(self: *const TextArea, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, max_width: u16) !void {
         const width_limit: usize = max_width;
         if (width_limit == 0) return;
 
@@ -666,20 +665,20 @@ pub const TextArea = struct {
 
             const styled = try self.placeholder_style.render(allocator, char_slice);
             defer allocator.free(styled);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
             byte_idx += byte_len;
             rendered_width += cw;
         }
 
         while (rendered_width < width_limit) {
-            try writer.writeByte(' ');
+            try result.append(' ');
             rendered_width += 1;
         }
     }
 
     fn renderWrappedLineSegment(
         self: *const TextArea,
-        writer: anytype,
+        result: *std.array_list.Managed(u8),
         allocator: std.mem.Allocator,
         line: []const u8,
         line_idx: usize,
@@ -712,11 +711,11 @@ pub const TextArea = struct {
             if (is_cursor) {
                 const styled = try self.cursor_style.render(allocator, char_slice);
                 defer allocator.free(styled);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else {
                 const styled = try self.text_style.render(allocator, char_slice);
                 defer allocator.free(styled);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
 
             byte_idx += byte_len;
@@ -727,17 +726,17 @@ pub const TextArea = struct {
         if (is_cursor_line and self.focused and self.cursor_col == end and end == line.len and rendered_width < width_limit) {
             const styled = try self.cursor_style.render(allocator, " ");
             defer allocator.free(styled);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
             rendered_width += 1;
         }
 
         while (rendered_width < width_limit) {
-            try writer.writeByte(' ');
+            try result.append(' ');
             rendered_width += 1;
         }
     }
 
-    fn renderLine(self: *const TextArea, writer: anytype, allocator: std.mem.Allocator, line: []const u8, line_idx: usize, max_width: u16) !void {
+    fn renderLine(self: *const TextArea, result: *std.array_list.Managed(u8), allocator: std.mem.Allocator, line: []const u8, line_idx: usize, max_width: u16) !void {
         const is_cursor_line = line_idx == self.cursor_row;
 
         // Apply horizontal scroll
@@ -780,11 +779,11 @@ pub const TextArea = struct {
             if (is_cursor) {
                 const styled = try self.cursor_style.render(allocator, char_slice);
                 defer allocator.free(styled);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else {
                 const styled = try self.text_style.render(allocator, char_slice);
                 defer allocator.free(styled);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
 
             byte_idx += byte_len;
@@ -796,13 +795,13 @@ pub const TextArea = struct {
         if (is_cursor_line and self.focused and byte_idx == self.cursor_col and rendered_width < max_width) {
             const styled = try self.cursor_style.render(allocator, " ");
             defer allocator.free(styled);
-            try writer.writeAll(styled);
+            try result.appendSlice(styled);
             rendered_width += 1;
         }
 
         // Pad remaining width
         while (rendered_width < max_width) {
-            try writer.writeByte(' ');
+            try result.append(' ');
             rendered_width += 1;
         }
     }

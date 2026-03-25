@@ -120,7 +120,7 @@ These are the working assumptions for the migration unless explicitly revisited.
 
 ## Current progress snapshot
 
-Snapshot date: 2026-03-24
+Snapshot date: 2026-03-25
 
 Completed so far on this branch:
 - added the migration reference docs:
@@ -161,17 +161,26 @@ Completed so far on this branch:
   - `src/components/table.zig`
   - `src/components/text_input.zig`
   - `src/components/toast.zig`
+- completed the fourth C2 batch (Phase 1D / Group D):
+  - `src/components/chart.zig`
+  - `src/components/context_menu.zig`
+  - `src/components/dropdown.zig`
+  - `src/components/form.zig`
+  - `src/components/menu_bar.zig`
+  - `src/components/modal.zig`
+  - `src/components/tab_group.zig`
+  - `src/components/text_area.zig`
+  - `src/components/tooltip.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
-- `zig build test` → still fails, but the failure frontier has moved forward to:
-  - remaining C2 component renderers in Phase 1D / Group D
-  - C5 formatter migration now surfacing in `src/input/keys.zig` (with `src/input/mouse.zig` still tracked in the migration plan)
-  - C4 time migration in `src/core/program.zig` still pending after the renderer/formatter frontiers clear
+- `zig build test` → still fails, but the renderer frontier is now clear and the remaining failures are:
+  - C4 time migration in `src/core/program.zig` (`std.time.Timer`)
+  - C5 formatter migration in `src/input/keys.zig` (`std.fmt.FormatOptions`), with `src/input/mouse.zig` still tracked in the migration plan
 
 Immediate next step:
-- start Phase 1D / Group D, then return to C5 and C4
+- return to C5 and C4 now that Phase 1 / C2 renderer migration is complete
 
 ---
 
@@ -561,7 +570,7 @@ Type: **semi-mechanical with review**
 - [x] Convert foundational layout/style files first
 - [x] Convert simple component renderers next
 - [x] Convert medium-complexity renderers
-- [ ] Convert high-complexity nested renderers last
+- [x] Convert high-complexity nested renderers last
 - [x] Keep helper use narrow; current helpers remain local (`ListWriter` in `src/style/style.zig`, plus direct list recursion in `src/components/tree.zig`)
 - [x] Avoid changing container types unless forced
 - [x] Re-run `zig test src/root.zig` after the current foundational/simple-component batches
