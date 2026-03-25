@@ -87,10 +87,11 @@ const Model = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
     try program.run();
 }
@@ -700,7 +701,7 @@ const fs = zz.FocusStyle{
 Configure the program with custom options:
 
 ```zig
-var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
+var program = try zz.Program(Model).initWithOptions(allocator, .{
     .fps = 60,                  // Target frame rate
     .alt_screen = true,         // Use alternate screen buffer
     .mouse = false,             // Enable mouse tracking
@@ -745,7 +746,7 @@ For model state that must live across frames, allocate with `ctx.persistent_allo
 For applications that need to do other work between frames (network polling, background processing, etc.), use `start()` + `tick()` instead of `run()`:
 
 ```zig
-var program = try zz.Program(Model).init(gpa.allocator());
+var program = try zz.Program(Model).init(allocator);
 defer program.deinit();
 
 try program.start();
@@ -772,7 +773,7 @@ pub fn update(self: *Model, msg: Msg, ctx: *zz.Context) zz.Cmd(Msg) {
 Intercept and transform messages before they reach your model:
 
 ```zig
-var program = try zz.Program(Model).init(gpa.allocator());
+var program = try zz.Program(Model).init(allocator);
 program.setFilter(&myFilter);
 
 fn myFilter(msg: Model.Msg) ?Model.Msg {

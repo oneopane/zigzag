@@ -246,10 +246,11 @@ fn clearShortcut(label: []const u8, key: []const u8) zz.Tooltip {
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var prog = try zz.Program(Model).init(gpa.allocator());
+    var prog = try zz.Program(Model).init(allocator);
     defer prog.deinit();
 
     try prog.run();

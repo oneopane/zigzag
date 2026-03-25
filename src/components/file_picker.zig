@@ -3,11 +3,11 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const env_compat = @import("../env_compat.zig");
 const keys = @import("../input/keys.zig");
 const style_mod = @import("../style/style.zig");
 const Color = @import("../style/color.zig").Color;
 const measure = @import("../layout/measure.zig");
-const fs = std.fs;
 
 pub const FilePicker = struct {
     allocator: std.mem.Allocator,
@@ -150,13 +150,13 @@ pub const FilePicker = struct {
         }
 
         // Read directory
-        var dir = fs.openDirAbsolute(path, .{ .iterate = true }) catch {
+        var dir = std.Io.Dir.openDirAbsolute(std.Options.debug_io, path, .{ .iterate = true }) catch {
             return;
         };
-        defer dir.close();
+        defer dir.close(std.Options.debug_io);
 
         var iter = dir.iterate();
-        while (iter.next() catch null) |entry| {
+        while (iter.next(std.Options.debug_io) catch null) |entry| {
             // Skip hidden files if not showing them
             const is_hidden = entry.name.len > 0 and entry.name[0] == '.';
             if (is_hidden and !self.show_hidden) continue;
@@ -185,7 +185,7 @@ pub const FilePicker = struct {
             // Get file size
             var size: u64 = 0;
             if (entry.kind == .file) {
-                const stat = dir.statFile(entry.name) catch null;
+                const stat = dir.statFile(std.Options.debug_io, entry.name, .{}) catch null;
                 if (stat) |s| {
                     size = s.size;
                 }
@@ -227,12 +227,12 @@ pub const FilePicker = struct {
     /// Navigate to home directory
     pub fn navigateHome(self: *FilePicker) !void {
         if (comptime builtin.os.tag == .windows) {
-            var env_map = try std.process.getEnvMap(self.allocator);
-            defer env_map.deinit();
-            const home = env_map.get("USERPROFILE") orelse "C:\\";
+            const home = env_compat.getOwned(self.allocator, "USERPROFILE") orelse return self.navigate("C:\\");
+            defer self.allocator.free(home);
             try self.navigate(home);
         } else {
-            const home = std.posix.getenv("HOME") orelse "/";
+            const home = env_compat.getOwned(self.allocator, "HOME") orelse return self.navigate("/");
+            defer self.allocator.free(home);
             try self.navigate(home);
         }
     }

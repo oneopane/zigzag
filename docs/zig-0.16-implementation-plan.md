@@ -187,17 +187,30 @@ Completed so far on this branch:
   - `src/style/color.zig`
   - `src/terminal/platform/windows.zig`
   - `src/terminal/terminal.zig`
+- completed Phase 5A / C1 allocator bootstrap sweep in:
+  - `README.md`
+  - `src/root.zig`
+  - all example mains previously using `std.heap.GeneralPurposeAllocator`
+- completed Phase 5B deferred example/local build cleanup in:
+  - `examples/animation.zig`
+  - `examples/context_menu.zig`
+  - `examples/showcase.zig`
+  - `examples/todo_list.zig`
+  - `examples/file_browser.zig`
+  - `src/components/file_picker.zig`
+  - `src/core/program.zig`
+  - `src/env_compat.zig`
+  - `src/terminal/platform/posix.zig`
+  - `src/terminal/terminal.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
 - `zig build test` → passes
-- `zig build` → still fails, but the remaining frontier is now examples/docs bootstrap cleanup:
-  - example mains still using `std.heap.GeneralPurposeAllocator`
-  - example-local cleanup still remains in `examples/animation.zig`, `examples/context_menu.zig`, `examples/showcase.zig`, and `examples/todo_list.zig`
+- `zig build` → passes
 
 Immediate next step:
-- start Phase 5A / C1 allocator bootstrap sweep, then finish the deferred example-local cleanup in Phase 5B
+- run the Phase 6 final audit / cleanup pass and review the remaining valid `.writer()` callsites
 
 ---
 
@@ -571,13 +584,13 @@ Interpretation of audit results:
 
 Type: **mechanical**
 
-- [ ] Choose the allocator bootstrap pattern to use for examples/docs
-- [ ] Update all example mains listed in the inventory
-- [ ] Update `README.md`
-- [ ] Update `src/root.zig` doc snippet
-- [ ] Confirm no broader example-entry refactor was introduced accidentally
-- [ ] Run `zig build`
-- [ ] Search for leftover `GeneralPurposeAllocator`
+- [x] Choose the allocator bootstrap pattern to use for examples/docs
+- [x] Update all example mains listed in the inventory
+- [x] Update `README.md`
+- [x] Update `src/root.zig` doc snippet
+- [x] Confirm no broader example-entry refactor was introduced accidentally
+- [x] Run `zig build`
+- [x] Search for leftover `GeneralPurposeAllocator`
 
 ## C2 checklist — `Managed(...).writer()` removal
 

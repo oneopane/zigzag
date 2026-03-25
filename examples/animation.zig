@@ -92,9 +92,8 @@ const Model = struct {
         const title = title_style.render(ctx.allocator, "Animation & Easing Demo") catch "Animation";
 
         var buf = std.array_list.Managed(u8).init(ctx.allocator);
-        const writer = buf.writer();
-        writer.writeAll(title) catch {};
-        writer.writeAll("\n\n") catch {};
+        buf.appendSlice(title) catch {};
+        buf.appendSlice("\n\n") catch {};
 
         // Render each tween as a bar
         for (&self.tweens, self.easing_names) |*tw, name| {
@@ -104,7 +103,7 @@ const Model = struct {
             label_style = label_style.inline_style(true);
             const label = std.fmt.allocPrint(ctx.allocator, "{s:>20}: ", .{name}) catch "";
             const styled_label = label_style.render(ctx.allocator, label) catch label;
-            writer.writeAll(styled_label) catch {};
+            buf.appendSlice(styled_label) catch {};
 
             // Bar
             const pos = @as(usize, @intFromFloat(@max(0, tw.value())));
@@ -115,25 +114,25 @@ const Model = struct {
                     dot_style = dot_style.bold(true);
                     dot_style = dot_style.inline_style(true);
                     const dot = dot_style.render(ctx.allocator, "●") catch "o";
-                    writer.writeAll(dot) catch {};
+                    buf.appendSlice(dot) catch {};
                 } else {
                     var track_style = zz.Style{};
                     track_style = track_style.fg(zz.Color.gray(6));
                     track_style = track_style.inline_style(true);
                     const track = track_style.render(ctx.allocator, "─") catch "-";
-                    writer.writeAll(track) catch {};
+                    buf.appendSlice(track) catch {};
                 }
             }
-            writer.writeByte('\n') catch {};
+            buf.append('\n') catch {};
         }
 
         // Color tween demo
-        writer.writeAll("\n") catch {};
+        buf.appendSlice("\n") catch {};
         var color_label_style = zz.Style{};
         color_label_style = color_label_style.fg(zz.Color.cyan());
         color_label_style = color_label_style.inline_style(true);
         const color_label = color_label_style.render(ctx.allocator, "     Color tween: ") catch "";
-        writer.writeAll(color_label) catch {};
+        buf.appendSlice(color_label) catch {};
 
         const ct = self.color_tween.value();
         const color = zz.tweenColor(zz.Color.red(), zz.Color.cyan(), ct);
@@ -142,25 +141,26 @@ const Model = struct {
         cs = cs.bold(true);
         cs = cs.inline_style(true);
         const color_block = cs.render(ctx.allocator, "████████████████████████████████") catch "";
-        writer.writeAll(color_block) catch {};
+        buf.appendSlice(color_block) catch {};
 
         // Help
-        writer.writeAll("\n\n") catch {};
+        buf.appendSlice("\n\n") catch {};
         var help_style = zz.Style{};
         help_style = help_style.fg(zz.Color.gray(12));
         help_style = help_style.inline_style(true);
         const help = help_style.render(ctx.allocator, "r: restart animations | q: quit") catch "";
-        writer.writeAll(help) catch {};
+        buf.appendSlice(help) catch {};
 
         return buf.toOwnedSlice() catch "Error";
     }
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
 
     try program.run();

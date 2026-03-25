@@ -149,7 +149,6 @@ const Model = struct {
 
         // Build todo list display using filtered_indices
         var list_content = std.array_list.Managed(u8).init(ctx.allocator);
-        const writer = list_content.writer();
 
         // Show filter if enabled
         if (self.list.filter_enabled) {
@@ -158,29 +157,29 @@ const Model = struct {
             filter_style = filter_style.inline_style(true);
             const filter_text = std.fmt.allocPrint(ctx.allocator, "Filter: {s}", .{self.list.filter_text.items}) catch "Filter:";
             const styled_filter = filter_style.render(ctx.allocator, filter_text) catch filter_text;
-            writer.writeAll(styled_filter) catch {};
-            writer.writeByte('\n') catch {};
+            list_content.appendSlice(styled_filter) catch {};
+            list_content.append('\n') catch {};
         }
 
         const visible = self.list.filtered_indices.items;
 
         for (visible, 0..) |item_idx, i| {
-            if (i > 0) writer.writeByte('\n') catch {};
+            if (i > 0) list_content.append('\n') catch {};
 
             const item = self.list.items.items[item_idx];
 
             // Cursor indicator
             if (i == self.list.cursor) {
-                writer.writeAll("> ") catch {};
+                list_content.appendSlice("> ") catch {};
             } else {
-                writer.writeAll("  ") catch {};
+                list_content.appendSlice("  ") catch {};
             }
 
             // Checkbox
             if (item.value.done) {
-                writer.writeAll("[x] ") catch {};
+                list_content.appendSlice("[x] ") catch {};
             } else {
-                writer.writeAll("[ ] ") catch {};
+                list_content.appendSlice("[ ] ") catch {};
             }
 
             // Title with strikethrough if done
@@ -190,16 +189,16 @@ const Model = struct {
                 done_style = done_style.fg(zz.Color.gray(12));
                 done_style = done_style.inline_style(true);
                 const styled = done_style.render(ctx.allocator, item.title) catch item.title;
-                writer.writeAll(styled) catch {};
+                list_content.appendSlice(styled) catch {};
             } else if (i == self.list.cursor) {
                 var selected_style = zz.Style{};
                 selected_style = selected_style.bold(true);
                 selected_style = selected_style.fg(zz.Color.magenta());
                 selected_style = selected_style.inline_style(true);
                 const styled = selected_style.render(ctx.allocator, item.title) catch item.title;
-                writer.writeAll(styled) catch {};
+                list_content.appendSlice(styled) catch {};
             } else {
-                writer.writeAll(item.title) catch {};
+                list_content.appendSlice(item.title) catch {};
             }
         }
 
@@ -289,10 +288,11 @@ const Model = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
 
     try program.run();

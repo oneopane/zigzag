@@ -230,8 +230,7 @@ const Model = struct {
             \\const std = @import("std");
             \\
             \\pub fn main() !void {
-            \\    const stdout = std.Io.getStdOut().writer();
-            \\    try stdout.print("Hello, {s}!\n", .{"world"});
+            \\    std.debug.print("Hello, {s}!\n", .{"world"});
             \\}
             \\
             \\// Edit this code with the text area component.
@@ -512,11 +511,10 @@ const Model = struct {
 
     fn renderTabBar(self: *const Model, ctx: *const zz.Context) ![]const u8 {
         var result = std.array_list.Managed(u8).init(ctx.allocator);
-        const writer = result.writer();
 
         const tabs = [_]Tab{ .dashboard, .charts, .data, .files, .editor, .unicode };
         for (tabs, 0..) |tab, i| {
-            if (i > 0) try writer.writeAll("  ");
+            if (i > 0) try result.appendSlice("  ");
 
             if (tab == self.active_tab) {
                 var active_style = zz.Style{};
@@ -526,14 +524,14 @@ const Model = struct {
                 active_style = active_style.inline_style(true);
                 const label = try std.fmt.allocPrint(ctx.allocator, "{d}:{s}", .{ i + 1, tab.name() });
                 const styled = try active_style.render(ctx.allocator, label);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             } else {
                 var tab_style = zz.Style{};
                 tab_style = tab_style.fg(zz.Color.gray(12));
                 tab_style = tab_style.inline_style(true);
                 const label = try std.fmt.allocPrint(ctx.allocator, "{d}:{s}", .{ i + 1, tab.name() });
                 const styled = try tab_style.render(ctx.allocator, label);
-                try writer.writeAll(styled);
+                try result.appendSlice(styled);
             }
         }
 
@@ -578,15 +576,12 @@ const Model = struct {
         const sparkline_row = try std.fmt.allocPrint(ctx.allocator, "{s}{s}", .{ spark_label, sparkline_view });
 
         // Spinner
-        const spinner_view = if (self.progress.isComplete())
-            blk: {
-                var done_style = zz.Style{};
-                done_style = done_style.fg(zz.Color.green());
-                done_style = done_style.inline_style(true);
-                break :blk try done_style.render(ctx.allocator, "* All tasks complete!");
-            }
-        else
-            try self.spinner.viewWithTitle(ctx.allocator, "Processing...");
+        const spinner_view = if (self.progress.isComplete()) blk: {
+            var done_style = zz.Style{};
+            done_style = done_style.fg(zz.Color.green());
+            done_style = done_style.inline_style(true);
+            break :blk try done_style.render(ctx.allocator, "* All tasks complete!");
+        } else try self.spinner.viewWithTitle(ctx.allocator, "Processing...");
 
         // Notifications
         const notif_view = try self.notifications.view(ctx.allocator);
@@ -1064,10 +1059,11 @@ const Model = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).initWithOptions(gpa.allocator(), .{
+    var program = try zz.Program(Model).initWithOptions(allocator, .{
         .mouse = true,
         .title = "ZigZag Showcase",
     });

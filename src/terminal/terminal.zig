@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 pub const ansi = @import("ansi.zig");
 pub const screen = @import("screen.zig");
+const env_compat = @import("../env_compat.zig");
 const runtime_time = @import("../time_compat.zig");
 const unicode = @import("../unicode.zig");
 
@@ -546,7 +547,7 @@ pub const Terminal = struct {
         var collected = std.array_list.Managed(u8).init(allocator);
         defer collected.deinit();
 
-        const deadline = runtime_time.Deadline.afterMilliseconds(timeout_ms);
+        const deadline = runtime_time.Deadline.afterMilliseconds(@intCast(@max(timeout_ms, 0)));
         while (!deadline.reached()) {
             var chunk: [256]u8 = undefined;
             const n = self.readPlatformInput(&chunk, 30) catch 0;
@@ -974,16 +975,16 @@ pub const Terminal = struct {
         argv_buf[argc] = path;
         argc += 1;
 
-        const result = try std.process.Child.run(.{
-            .allocator = std.heap.page_allocator,
+        const result = try std.process.run(std.heap.page_allocator, std.Options.debug_io, .{
             .argv = argv_buf[0..argc],
-            .max_output_bytes = options.max_output_bytes,
+            .stdout_limit = .limited(options.max_output_bytes),
+            .stderr_limit = .limited(options.max_output_bytes),
         });
         defer std.heap.page_allocator.free(result.stdout);
         defer std.heap.page_allocator.free(result.stderr);
 
         switch (result.term) {
-            .Exited => |code| if (code != 0) return error.BrokenPipe,
+            .exited => |code| if (code != 0) return error.BrokenPipe,
             else => return error.BrokenPipe,
         }
 
@@ -1016,7 +1017,7 @@ pub const Terminal = struct {
             return;
         }
 
-        const term_features_owned = std.process.getEnvVarOwned(std.heap.page_allocator, "TERM_FEATURES") catch null;
+        const term_features_owned = env_compat.getOwned(std.heap.page_allocator, "TERM_FEATURES");
         defer if (term_features_owned) |value| std.heap.page_allocator.free(value);
         const term_features = if (term_features_owned) |value| value else "";
 
@@ -1766,10 +1767,10 @@ pub const Terminal = struct {
 
     fn commandExists(name: []const u8) bool {
         const argv = [_][]const u8{ name, "--version" };
-        const result = std.process.Child.run(.{
-            .allocator = std.heap.page_allocator,
+        const result = std.process.run(std.heap.page_allocator, std.Options.debug_io, .{
             .argv = &argv,
-            .max_output_bytes = 1024,
+            .stdout_limit = .limited(1024),
+            .stderr_limit = .limited(1024),
         }) catch return false;
         defer std.heap.page_allocator.free(result.stdout);
         defer std.heap.page_allocator.free(result.stderr);
@@ -1777,19 +1778,19 @@ pub const Terminal = struct {
     }
 
     fn envVarExists(name: []const u8) bool {
-        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        const value = env_compat.getOwned(std.heap.page_allocator, name) orelse return false;
         defer std.heap.page_allocator.free(value);
         return value.len > 0;
     }
 
     fn envVarEquals(name: []const u8, expected: []const u8) bool {
-        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        const value = env_compat.getOwned(std.heap.page_allocator, name) orelse return false;
         defer std.heap.page_allocator.free(value);
         return std.ascii.eqlIgnoreCase(value, expected);
     }
 
     fn envVarContains(name: []const u8, needle: []const u8) bool {
-        const value = std.process.getEnvVarOwned(std.heap.page_allocator, name) catch return false;
+        const value = env_compat.getOwned(std.heap.page_allocator, name) orelse return false;
         defer std.heap.page_allocator.free(value);
         return std.mem.indexOf(u8, value, needle) != null;
     }

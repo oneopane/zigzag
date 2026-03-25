@@ -59,16 +59,16 @@ const Model = struct {
     fn loadPreview(self: *Model) void {
         if (self.file_picker.getSelected()) |path| {
             // Try to read file preview
-            const file = std.fs.openFileAbsolute(path, .{}) catch {
+            const file = std.Io.Dir.openFileAbsolute(std.Options.debug_io, path, .{}) catch {
                 self.error_message = "Cannot open file";
                 self.preview.clearRetainingCapacity();
                 return;
             };
-            defer file.close();
+            defer file.close(std.Options.debug_io);
 
             // Read first 500 bytes
             var buf: [500]u8 = undefined;
-            const bytes_read = file.read(&buf) catch {
+            const bytes_read = file.readStreaming(std.Options.debug_io, &.{buf[0..]}) catch {
                 self.error_message = "Cannot read file";
                 self.preview.clearRetainingCapacity();
                 return;
@@ -166,10 +166,11 @@ const Model = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
 
     try program.run();

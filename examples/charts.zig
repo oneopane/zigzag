@@ -310,10 +310,11 @@ fn inlineStat(ctx: *const zz.Context, label: []const u8, value: []const u8) ![]c
 }
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
     try program.run();
 }

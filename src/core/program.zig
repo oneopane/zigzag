@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const env_compat = @import("../env_compat.zig");
 const Terminal = @import("../terminal/terminal.zig").Terminal;
 const ansi = @import("../terminal/ansi.zig");
 const keyboard = @import("../input/keyboard.zig");
@@ -364,7 +365,7 @@ pub fn Program(comptime Model: type) type {
         }
 
         fn envUnicodeWidthOverride() ?unicode.WidthStrategy {
-            const raw = std.process.getEnvVarOwned(std.heap.page_allocator, "ZZ_UNICODE_WIDTH") catch return null;
+            const raw = env_compat.getOwned(std.heap.page_allocator, "ZZ_UNICODE_WIDTH") orelse return null;
             defer std.heap.page_allocator.free(raw);
             if (std.ascii.eqlIgnoreCase(raw, "unicode")) return .unicode;
             if (std.ascii.eqlIgnoreCase(raw, "legacy")) return .legacy_wcwidth;

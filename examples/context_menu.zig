@@ -90,9 +90,8 @@ const Model = struct {
 
         // File list
         var list_buf = std.array_list.Managed(u8).init(ctx.allocator);
-        const lw = list_buf.writer();
         for (self.items, 0..) |item, i| {
-            if (i > 0) lw.writeByte('\n') catch {};
+            if (i > 0) list_buf.append('\n') catch {};
             if (i == self.selected) {
                 var sel_style = zz.Style{};
                 sel_style = sel_style.bold(true);
@@ -100,10 +99,10 @@ const Model = struct {
                 sel_style = sel_style.inline_style(true);
                 const line = std.fmt.allocPrint(ctx.allocator, "  > {s}", .{item}) catch "";
                 const styled = sel_style.render(ctx.allocator, line) catch line;
-                lw.writeAll(styled) catch {};
+                list_buf.appendSlice(styled) catch {};
             } else {
                 const line = std.fmt.allocPrint(ctx.allocator, "    {s}", .{item}) catch "";
-                lw.writeAll(line) catch {};
+                list_buf.appendSlice(line) catch {};
             }
         }
         const file_list = list_buf.toOwnedSlice() catch "";
@@ -139,10 +138,11 @@ const Model = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
 
-    var program = try zz.Program(Model).init(gpa.allocator());
+    var program = try zz.Program(Model).init(allocator);
     defer program.deinit();
 
     try program.run();

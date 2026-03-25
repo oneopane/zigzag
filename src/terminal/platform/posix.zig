@@ -39,7 +39,8 @@ pub const State = struct {
 
 /// Check if a file descriptor is a TTY
 pub fn isTty(fd: posix.fd_t) bool {
-    return posix.isatty(fd);
+    const rc = posix.system.isatty(fd);
+    return posix.errno(rc - 1) == .SUCCESS;
 }
 
 /// Get terminal size using ioctl (falls back to 80x24 for non-TTY)
@@ -182,7 +183,7 @@ pub fn setupSignals() !void {
     const handler = posix.Sigaction{
         .handler = .{
             .handler = struct {
-                fn handle(_: c_int) callconv(std.builtin.CallingConvention.c) void {
+                fn handle(_: posix.SIG) callconv(std.builtin.CallingConvention.c) void {
                     resize_signaled.store(true, .release);
                 }
             }.handle,
