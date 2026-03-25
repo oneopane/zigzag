@@ -6,6 +6,7 @@ const builtin = @import("builtin");
 const Terminal = @import("../terminal/terminal.zig").Terminal;
 const ansi = @import("../terminal/ansi.zig");
 const keyboard = @import("../input/keyboard.zig");
+const runtime_time = @import("../time_compat.zig");
 const Context = @import("context.zig").Context;
 const Options = @import("context.zig").Options;
 const message = @import("message.zig");
@@ -52,7 +53,6 @@ pub fn Program(comptime Model: type) type {
         context: Context,
         options: Options,
         running: bool,
-        clock: std.time.Timer,
         start_time: u64,
         last_frame_time: u64,
         pending_tick: ?u64,
@@ -76,8 +76,7 @@ pub fn Program(comptime Model: type) type {
         /// Initialize with custom options
         pub fn initWithOptions(allocator: std.mem.Allocator, options: Options) !Self {
             const arena = std.heap.ArenaAllocator.init(allocator);
-            var clock = try std.time.Timer.start();
-            const now = clock.read();
+            const now = runtime_time.monotonicNowNs();
             const self = Self{
                 .allocator = allocator,
                 .arena = arena,
@@ -88,7 +87,6 @@ pub fn Program(comptime Model: type) type {
                 .context = Context.init(allocator, allocator),
                 .options = options,
                 .running = false,
-                .clock = clock,
                 .start_time = now,
                 .last_frame_time = now,
                 .pending_tick = null,
@@ -187,8 +185,7 @@ pub fn Program(comptime Model: type) type {
             self.context.kitty_text_sizing = width_caps.kitty_text_sizing;
             unicode.setWidthStrategy(effective_width_strategy);
 
-            self.clock.reset();
-            self.start_time = self.clock.read();
+            self.start_time = runtime_time.monotonicNowNs();
             self.last_frame_time = self.start_time;
             self.context.elapsed = 0;
             self.context.delta = 0;
@@ -210,7 +207,7 @@ pub fn Program(comptime Model: type) type {
 
         /// Execute a single frame: poll input, process events, render.
         pub fn tick(self: *Self) !void {
-            const now = self.clock.read();
+            const now = runtime_time.monotonicNowNs();
             const delta = now - self.last_frame_time;
 
             // Enforce framerate limit
@@ -223,7 +220,7 @@ pub fn Program(comptime Model: type) type {
                 sleepNs(min_frame_time_ns - delta);
             }
 
-            const frame_time = self.clock.read();
+            const frame_time = runtime_time.monotonicNowNs();
             const actual_delta = frame_time - self.last_frame_time;
             self.last_frame_time = frame_time;
 
@@ -405,7 +402,7 @@ pub fn Program(comptime Model: type) type {
             }
 
             // Avoid a large post-resume frame delta.
-            self.last_frame_time = self.clock.read();
+            self.last_frame_time = runtime_time.monotonicNowNs();
 
             // Force re-render
             self.last_view_hash = 0;
@@ -743,55 +740,7 @@ pub fn Program(comptime Model: type) type {
         }
 
         fn sleepNs(nanoseconds: u64) void {
-            if (nanoseconds == 0) return;
-            const ns_per_s: u64 = if (@hasDecl(std.time, "ns_per_s")) std.time.ns_per_s else 1_000_000_000;
-            const ns_per_ms: u64 = if (@hasDecl(std.time, "ns_per_ms")) std.time.ns_per_ms else 1_000_000;
-
-            // Zig 0.15 API path.
-            if (@hasDecl(std.Thread, "sleep")) {
-                std.Thread.sleep(nanoseconds);
-                return;
-            }
-
-            // Zig 0.16+ API path.
-            if (@hasDecl(std, "Io")) {
-                const Io = std.Io;
-                if (@hasDecl(Io, "Threaded") and
-                    @hasDecl(Io, "Clock") and
-                    @hasDecl(Io.Clock, "Duration") and
-                    @hasDecl(Io.Clock.Duration, "fromNanoseconds") and
-                    @hasDecl(Io.Clock.Duration, "sleep"))
-                {
-                    var threaded_io: Io.Threaded = .init_single_threaded;
-                    const io = threaded_io.io();
-                    const duration = Io.Clock.Duration.fromNanoseconds(@intCast(nanoseconds));
-                    duration.sleep(io) catch {};
-                    return;
-                }
-            }
-
-            // Fallback for targets/environments where the above are unavailable.
-            if (@hasDecl(std, "os") and @hasDecl(std.os, "windows") and builtin.os.tag == .windows) {
-                const windows = std.os.windows;
-                const big_ms_from_ns = nanoseconds / ns_per_ms;
-                const ms = std.math.cast(windows.DWORD, big_ms_from_ns) orelse std.math.maxInt(windows.DWORD);
-                windows.kernel32.Sleep(ms);
-                return;
-            }
-
-            if (@hasDecl(std, "posix") and @hasDecl(std.posix, "nanosleep")) {
-                const seconds = nanoseconds / ns_per_s;
-                const rem_ns = nanoseconds % ns_per_s;
-                std.posix.nanosleep(seconds, rem_ns);
-                return;
-            }
-
-            // Last resort: spin for the requested duration.
-            var timer = std.time.Timer.start() catch return;
-            const start_ns = timer.read();
-            while (timer.read() - start_ns < nanoseconds) {
-                std.atomic.spinLoopHint();
-            }
+            runtime_time.sleepNs(nanoseconds);
         }
 
         fn resetFrameAllocator(self: *Self) void {

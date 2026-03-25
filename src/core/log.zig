@@ -2,6 +2,7 @@
 //! Since stdout is owned by the renderer, this provides file-based logging.
 
 const std = @import("std");
+const runtime_time = @import("../time_compat.zig");
 
 /// Logger that writes timestamped messages to a file
 pub const Logger = struct {
@@ -32,7 +33,7 @@ pub const Logger = struct {
         const writer = self.file.writer();
 
         // Write timestamp
-        const now = std.time.timestamp();
+        const now = runtime_time.wallNowSeconds();
         const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = @intCast(now) };
         const day_seconds = epoch_seconds.getDaySeconds();
 

@@ -176,15 +176,20 @@ Completed so far on this branch:
   - `src/input/keys.zig`
   - `src/input/mouse.zig`
   - `tests/input_tests.zig`
+- completed Phase 4 / C4 time migration via the repo-local compatibility layer in:
+  - `src/time_compat.zig`
+  - `src/core/program.zig`
+  - `src/terminal/terminal.zig`
+  - `src/core/log.zig`
 
 Validation snapshot:
 - `zig version` → `0.16.0-dev.2979+e93834410`
 - `zig test src/root.zig` → passes
-- `zig build test` → still fails, and the remaining frontier is now C4 time migration:
-  - `src/core/program.zig` (`std.time.Timer`)
+- `zig build test` → still fails, but the C4 time frontier is now clear and the next surfaced library failure is:
+  - `src/terminal/terminal.zig` / `src/core/log.zig` / `src/core/context.zig` still using `std.fs.File`
 
 Immediate next step:
-- start Phase 4 / C4 via the repo-local time compatibility layer
+- inspect and batch the next file/stdio API migration frontier now that C4 is complete
 
 ---
 
@@ -595,17 +600,17 @@ Type: **semi-mechanical with review**
 
 Type: **design-sensitive**
 
-- [ ] Confirm the exact modern time APIs to use against the local toolchain
-- [ ] Create one narrow internal compatibility layer
-- [ ] Implement monotonic elapsed-time helper(s)
-- [ ] Implement monotonic deadline helper(s)
-- [ ] Implement wall-clock timestamp helper(s)
-- [ ] Migrate `src/core/program.zig`
-- [ ] Migrate `src/terminal/terminal.zig`
-- [ ] Migrate `src/core/log.zig`
-- [ ] Verify monotonic and wall-clock paths were not mixed
-- [ ] Re-run `zig test src/root.zig` and `zig build test`
-- [ ] Search for leftover old `std.time` runtime APIs
+- [x] Confirm the exact modern time APIs to use against the local toolchain
+- [x] Create one narrow internal compatibility layer
+- [x] Implement monotonic elapsed-time helper(s)
+- [x] Implement monotonic deadline helper(s)
+- [x] Implement wall-clock timestamp helper(s)
+- [x] Migrate `src/core/program.zig`
+- [x] Migrate `src/terminal/terminal.zig`
+- [x] Migrate `src/core/log.zig`
+- [x] Verify monotonic and wall-clock paths were not mixed
+- [x] Re-run `zig test src/root.zig` and `zig build test`
+- [x] Search for leftover old `std.time` runtime APIs
 
 ## C5 checklist — formatter convention cleanup
 

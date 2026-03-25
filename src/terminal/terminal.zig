@@ -5,6 +5,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 pub const ansi = @import("ansi.zig");
 pub const screen = @import("screen.zig");
+const runtime_time = @import("../time_compat.zig");
 const unicode = @import("../unicode.zig");
 
 // Platform-specific implementation
@@ -545,8 +546,8 @@ pub const Terminal = struct {
         var collected = std.array_list.Managed(u8).init(allocator);
         defer collected.deinit();
 
-        const deadline_ms = std.time.milliTimestamp() + timeout_ms;
-        while (std.time.milliTimestamp() < deadline_ms) {
+        const deadline = runtime_time.Deadline.afterMilliseconds(timeout_ms);
+        while (!deadline.reached()) {
             var chunk: [256]u8 = undefined;
             const n = self.readPlatformInput(&chunk, 30) catch 0;
             if (n == 0) continue;
@@ -1365,9 +1366,9 @@ pub const Terminal = struct {
 
         var collected: [1024]u8 = undefined;
         var collected_len: usize = 0;
-        const deadline_ms = std.time.milliTimestamp() + 180;
+        const deadline = runtime_time.Deadline.afterMilliseconds(180);
 
-        while (std.time.milliTimestamp() < deadline_ms) {
+        while (!deadline.reached()) {
             var chunk: [128]u8 = undefined;
             const n = self.readInput(&chunk, 30) catch 0;
             if (n == 0) continue;
@@ -1419,9 +1420,9 @@ pub const Terminal = struct {
 
         var collected: [2048]u8 = undefined;
         var collected_len: usize = 0;
-        const deadline_ms = std.time.milliTimestamp() + 180;
+        const deadline = runtime_time.Deadline.afterMilliseconds(180);
 
-        while (std.time.milliTimestamp() < deadline_ms) {
+        while (!deadline.reached()) {
             var chunk: [128]u8 = undefined;
             const n = self.readInput(&chunk, 30) catch 0;
             if (n == 0) continue;
@@ -1459,9 +1460,9 @@ pub const Terminal = struct {
 
         var collected: [1024]u8 = undefined;
         var collected_len: usize = 0;
-        const deadline_ms = std.time.milliTimestamp() + 120;
+        const deadline = runtime_time.Deadline.afterMilliseconds(120);
 
-        while (std.time.milliTimestamp() < deadline_ms) {
+        while (!deadline.reached()) {
             var chunk: [128]u8 = undefined;
             const n = self.readInput(&chunk, 25) catch 0;
             if (n == 0) continue;
@@ -1520,9 +1521,9 @@ pub const Terminal = struct {
 
         var collected: [512]u8 = undefined;
         var collected_len: usize = 0;
-        const deadline_ms = std.time.milliTimestamp() + 250;
+        const deadline = runtime_time.Deadline.afterMilliseconds(250);
 
-        while (std.time.milliTimestamp() < deadline_ms) {
+        while (!deadline.reached()) {
             var chunk: [128]u8 = undefined;
             const n = self.readInput(&chunk, 40) catch 0;
             if (n == 0) continue;
@@ -1602,9 +1603,9 @@ pub const Terminal = struct {
 
         var buf: [512]u8 = undefined;
         var len: usize = 0;
-        const deadline_ms = std.time.milliTimestamp() + 250;
+        const deadline = runtime_time.Deadline.afterMilliseconds(250);
 
-        while (std.time.milliTimestamp() < deadline_ms) {
+        while (!deadline.reached()) {
             var chunk: [128]u8 = undefined;
             const n = self.readInput(&chunk, 40) catch 0;
             if (n == 0) continue;
